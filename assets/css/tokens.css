@@ -1,0 +1,275 @@
+/* ============================================================
+   SOMA Design System — Tokens
+   Faithful implementation of the SOMA spec (colors, type,
+   spacing, radius, effects) plus motion tokens.
+   Theme is switched via [data-theme="dark"|"light"] on <html>.
+   ============================================================ */
+
+:root {
+  /* ---- Typography ---------------------------------------- */
+  --font-brand: "Schibsted Grotesk", "Hanken Grotesk", system-ui, sans-serif;
+  --font-body: "Hanken Grotesk", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+
+  --fs-xxxs: 12px;
+  --fs-xxs: 14px;
+  --fs-xs: 16px;
+  --fs-sm: 20px;
+  --fs-md: 24px;
+  --fs-lg: 32px;
+  --fs-xl: 40px;
+  --fs-xxl: 48px;
+  --fs-xxxl: 56px;
+
+  --lh-xs: 16px;
+  --lh-sm: 24px;
+  --lh-md: 32px;
+  --lh-lg: 40px;
+  --lh-xl: 48px;
+  --lh-ul: 56px;
+
+  --fw-light: 300;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-bold: 700;
+
+  /* ---- Spacing ------------------------------------------- */
+  --sp-none: 0;
+  --sp-xxs: 4px;
+  --sp-xs: 8px;
+  --sp-sm: 12px;
+  --sp-md: 16px;
+  --sp-lg: 24px;
+  --sp-xl: 32px;
+  --sp-xxl: 48px;
+  --sp-xxxl: 64px;
+
+  /* ---- Padding ------------------------------------------- */
+  --pd-xs: 4px;
+  --pd-sm: 8px;
+  --pd-md: 16px;
+  --pd-lg: 24px;
+  --pd-xl: 32px;
+  --pd-xxl: 48px;
+
+  /* ---- Border width -------------------------------------- */
+  --bw-none: 0;
+  --bw-sm: 1px;
+  --bw-md: 2px;
+  --bw-lg: 4px;
+  --bw-xl: 8px;
+
+  /* ---- Radius -------------------------------------------- */
+  --br-none: 0;
+  --br-xxs: 4px;
+  --br-xs: 8px;
+  --br-sm: 12px;
+  --br-md: 16px;
+  --br-lg: 24px;
+  --br-xl: 32px;
+  --br-xxl: 48px;
+  --br-circular: 9999px;
+
+  /* Component radii */
+  --br-button: var(--br-circular);
+  --br-iconbutton: var(--br-circular);
+  --br-card: var(--br-lg);
+  --br-shortcut: var(--br-lg);
+  --br-smallshortcut: var(--br-md);
+  --br-chips: var(--br-xs);
+  --br-smallchips: var(--br-xxs);
+  --br-input: var(--br-md);
+  --br-alert: var(--br-md);
+  --br-search: var(--br-circular);
+  --br-tooltip: var(--br-circular);
+  --br-riskbadge: var(--br-xs);
+  --br-banner: var(--br-lg);
+  --br-checkbox: var(--br-xs);
+
+  /* ---- Background blur ----------------------------------- */
+  --bgblur-sm: 4px;
+  --bgblur-md: 8px;
+  --bgblur-lg: 16px;
+  --bgblur-xl: 24px;
+
+  /* ---- Brand (theme-independent) ------------------------- */
+  --brand-pure: #FBC105;
+  --brand-container: rgba(251, 193, 5, 0.16);
+
+  /* ---- Motion tokens ------------------------------------- */
+  --dur-1: 120ms;
+  --dur-2: 180ms;
+  --dur-3: 240ms;
+  --dur-4: 300ms;
+  --dur-5: 500ms;
+
+  --ease-out-quad: cubic-bezier(.25, .46, .45, .94);
+  --ease-out-cubic: cubic-bezier(.215, .61, .355, 1);
+  --ease-out-quart: cubic-bezier(.165, .84, .44, 1);
+  --ease-out-quint: cubic-bezier(.23, 1, .32, 1);
+  --ease-out-expo: cubic-bezier(.19, 1, .22, 1);
+  --ease-in-out-cubic: cubic-bezier(.645, .045, .355, 1);
+  --ease-in-out-quart: cubic-bezier(.77, 0, .175, 1);
+
+  /* ---- Chart palette (shared refs, resolved per theme) --- */
+}
+
+/* ============================================================
+   DARK THEME (default)
+   ============================================================ */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Surface */
+  --surface-pure: #121212;
+  --surface-container: rgba(255, 255, 255, 0.12);
+  --surface-card: #222222;
+  --surface-inverse: #FFFFFF;
+  --surface-raised: #1A1A1A;
+  --surface-sunken: #0C0C0C;
+
+  /* Content */
+  --content-pure: #FFFFFF;
+  --content-01: #CACACA;
+  --content-02: #A1A1A1;
+  --content-03: #8E8E8E;
+  --content-inverse: #121212;
+  --content-line: rgba(255, 255, 255, 0.10);
+  --content-line-strong: rgba(255, 255, 255, 0.16);
+
+  /* Content brand */
+  --content-brand-highlight: #FBC105;
+  --content-brand-on: #121212;
+
+  /* Feedback */
+  --success-pure: #3EEA9B;
+  --success-surface: #02311D;
+  --success-container: rgba(62, 234, 155, 0.12);
+  --info-pure: #9CB2FF;
+  --info-surface: #13146A;
+  --info-container: rgba(156, 178, 255, 0.12);
+  --error-pure: #F28080;
+  --error-surface: #400F0F;
+  --error-container: rgba(242, 128, 128, 0.12);
+  --alert-pure: #F7C028;
+  --alert-surface: #441B04;
+  --alert-container: rgba(247, 192, 40, 0.12);
+
+  /* Risk */
+  --risk-low: #FEFFC2;
+  --risk-medium: #FBE78C;
+  --risk-high: #F5ACAC;
+
+  /* Chart */
+  --chart-01: #FBC105;
+  --chart-02: #9CB2FF;
+  --chart-03: #F44336;
+  --chart-04: #00BCD4;
+  --chart-05: #E6308A;
+  --chart-06: #8BABF0;
+  --chart-07: #FFEF66;
+  --chart-08: #009688;
+  --chart-09: #FF8A00;
+  --chart-10: #4CAF50;
+  --chart-11: #FFC107;
+  --chart-12: #648291;
+  --chart-13: #FF5722;
+  --chart-14: #9E9E9E;
+  --chart-15: #FE9867;
+  --chart-16: #4C74FA;
+  --chart-17: #CDDC39;
+  --chart-18: #606FF3;
+  --chart-19: #8BC34A;
+  --chart-20: #9B8BF4;
+
+  /* Elevation (dark → deep shadows) */
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.40), 0 2px 8px rgba(0, 0, 0, 0.24);
+  --elev-2: 0 2px 4px rgba(0, 0, 0, 0.44), 0 8px 16px rgba(0, 0, 0, 0.32);
+  --elev-3: 0 4px 8px rgba(0, 0, 0, 0.48), 0 16px 32px rgba(0, 0, 0, 0.40);
+  --elev-4: 0 8px 16px rgba(0, 0, 0, 0.52), 0 24px 56px rgba(0, 0, 0, 0.48);
+
+  --glow-brand: 0 0 0 1px rgba(251, 193, 5, 0.32), 0 8px 32px rgba(251, 193, 5, 0.18);
+
+  --canvas-bg:
+    radial-gradient(1200px 700px at 72% -10%, rgba(251,193,5,0.05), transparent 60%),
+    radial-gradient(900px 600px at 0% 100%, rgba(156,178,255,0.04), transparent 55%),
+    #0C0C0C;
+  --grain-opacity: 0.035;
+}
+
+/* ============================================================
+   LIGHT THEME
+   ============================================================ */
+[data-theme="light"] {
+  color-scheme: light;
+
+  --surface-pure: #FFFFFF;
+  --surface-container: rgba(18, 18, 18, 0.06);
+  --surface-card: #EDEDED;
+  --surface-inverse: #121212;
+  --surface-raised: #FFFFFF;
+  --surface-sunken: #F4F4F4;
+
+  --content-pure: #121212;
+  --content-01: #333333;
+  --content-02: #545454;
+  --content-03: #767575;
+  --content-inverse: #FFFFFF;
+  --content-line: rgba(18, 18, 18, 0.10);
+  --content-line-strong: rgba(18, 18, 18, 0.16);
+
+  --content-brand-highlight: #95520B;
+  --content-brand-on: #121212;
+
+  --success-pure: #0B844C;
+  --success-surface: #DAFEEC;
+  --success-container: rgba(11, 132, 76, 0.12);
+  --info-pure: #505AFF;
+  --info-surface: #E5ECFF;
+  --info-container: rgba(80, 90, 255, 0.12);
+  --error-pure: #CC3333;
+  --error-surface: #FDD8D8;
+  --error-container: rgba(204, 51, 51, 0.12);
+  --alert-pure: #BA6C0C;
+  --alert-surface: #FFF0AD;
+  --alert-container: rgba(186, 108, 12, 0.12);
+
+  --risk-low: #CE9F00;
+  --risk-medium: #B1560C;
+  --risk-high: #AC2929;
+
+  --chart-01: #95520B;
+  --chart-02: #9C27B0;
+  --chart-03: #C54601;
+  --chart-04: #01819D;
+  --chart-05: #B51A63;
+  --chart-06: #2849F0;
+  --chart-07: #BA5920;
+  --chart-08: #016D61;
+  --chart-09: #9B6E17;
+  --chart-10: #015123;
+  --chart-11: #D13200;
+  --chart-12: #395663;
+  --chart-13: #A51B03;
+  --chart-14: #757575;
+  --chart-15: #795548;
+  --chart-16: #5928ED;
+  --chart-17: #02873A;
+  --chart-18: #3F51B5;
+  --chart-19: #026C2E;
+  --chart-20: #673AB7;
+
+  --elev-1: 0 1px 2px rgba(18, 18, 18, 0.06), 0 2px 8px rgba(18, 18, 18, 0.05);
+  --elev-2: 0 2px 4px rgba(18, 18, 18, 0.07), 0 8px 16px rgba(18, 18, 18, 0.07);
+  --elev-3: 0 4px 8px rgba(18, 18, 18, 0.08), 0 16px 32px rgba(18, 18, 18, 0.10);
+  --elev-4: 0 8px 16px rgba(18, 18, 18, 0.10), 0 24px 56px rgba(18, 18, 18, 0.14);
+
+  --glow-brand: 0 0 0 1px rgba(251, 193, 5, 0.55), 0 8px 32px rgba(251, 193, 5, 0.28);
+
+  --canvas-bg:
+    radial-gradient(1200px 700px at 72% -10%, rgba(251,193,5,0.10), transparent 60%),
+    radial-gradient(900px 600px at 0% 100%, rgba(80,90,255,0.05), transparent 55%),
+    #F4F4F4;
+  --grain-opacity: 0.02;
+}
