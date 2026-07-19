@@ -4,11 +4,6 @@ Protótipo funcional de uma plataforma onde o **Product Designer** sobe uma tela
 de produto + dados de uso real (export GA4/Looker) e a ferramenta gera
 visualizações e hipóteses de UX **ancoradas por componente** — não por pixel.
 
-Construído sobre o **SOMA Design System** (tokens de cor, tipografia,
-espaçamento, raio e efeitos), com tema claro e escuro.
-
-▶ **Live:** https://diegocabralr.github.io
-
 ---
 
 A ferramenta começa **vazia**: é preciso anexar uma imagem da tela **e** a
@@ -45,27 +40,3 @@ Há um botão **"Carregar exemplo"** para testar o fluxo completo sem arquivos
 próprios. Atalhos: `Esc` limpa seleção/desenho · `Delete` remove o retângulo
 selecionado.
 
----
-
-## Stack
-
-HTML + CSS + JavaScript (ES modules) — **sem build step**, servível direto pelo
-GitHub Pages.
-
-```
-index.html
-assets/
-  css/tokens.css   → SOMA Design System (cores, tipografia, spacing, raio, efeitos, motion)
-  css/app.css      → layout e componentes da aplicação
-  js/data.js       → modelo de dados (telas, eventos) + matemática dos insights
-  js/app.js        → controlador: render, interação, cross-panel linking, heatmap
-```
-
-Motion segue tokens de easing/duração dedicados e respeita
-`prefers-reduced-motion`.
-
-> Os dados exibidos são um mock representativo do domínio (aba "Explorar" de um
-> app de investimentos) para demonstrar a ferramenta de ponta a ponta.
-
-Referências de construção: SOMA Design System e a spec de discovery consolidada
-da plataforma de UX Analytics.
