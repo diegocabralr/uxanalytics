@@ -38,6 +38,9 @@ const state = {
   selectedId: null, hoverId: null, armedEvent: null,
   heat: { radius: 1, opacity: 0.85 },
   figmaNode: null, figmaToken: null, figmaProxy: null,
+  mode: "analysis",             // "analysis" | "funnel"
+  funnel: { steps: [], viz: "bars", selectedId: null },
+  // steps: [{ id, name, file, imageURL, volume, eventName, metric }]  metric: "users" | "count"
 };
 const ZOOM_MIN = 0.4, ZOOM_MAX = 6;
 
@@ -1356,6 +1359,374 @@ function loadExample() {
 }
 
 /* ============================================================
+   Funil — sequência de páginas com volumetria → quedas e conversão
+   ============================================================ */
+const funnelSteps = () => state.funnel.steps;
+
+function setMode(mode) {
+  state.mode = mode;
+  $$("#modenav .modenav__btn").forEach((b) => b.classList.toggle("is-active", b.dataset.mode === mode));
+  $("#workspace-analysis").hidden = mode !== "analysis";
+  $("#workspace-funnel").hidden = mode !== "funnel";
+  $("#pill-images").hidden = mode !== "analysis";
+  $("#pill-mapped").hidden = mode !== "analysis";
+  if (mode === "funnel") renderFunnel();
+}
+
+function renderFunnel() { renderFunnelData(); renderFunnelList(); renderFunnelViz(); }
+
+/* Value a bound step pulls from the spreadsheet (event_count or total_users). */
+const stepMetricValue = (ev, metric) => (metric === "count" ? ev.count : ev.users) || 0;
+
+/* Re-pull volume from the linked event (used after (re)loading a spreadsheet). */
+function syncFunnelBindings() {
+  funnelSteps().forEach((s) => {
+    if (!s.eventName) return;
+    const ev = state.events.find((e) => e.name === s.eventName);
+    if (ev) s.volume = stepMetricValue(ev, s.metric || "users");
+    else { s.eventName = null; } // event vanished after a new upload
+  });
+}
+
+/* Data-source card in the funnel panel — reuses the same events as Análise. */
+function renderFunnelData() {
+  const slot = $("#funnel-data");
+  if (!slot) return;
+  if (hasEvents()) {
+    slot.className = "funnel-data is-loaded";
+    slot.innerHTML =
+      `<span class="funnel-data__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M4 9h16M9 9v11"/></svg></span>
+       <span class="funnel-data__meta"><b>${state.events.length} eventos</b><small>${state.fileName || "planilha carregada"}</small></span>
+       <button class="funnel-data__act" id="funnel-data-replace">Trocar</button>`;
+  } else {
+    slot.className = "funnel-data";
+    slot.innerHTML =
+      `<span class="funnel-data__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M4 9h16M9 9v11"/></svg></span>
+       <span class="funnel-data__meta"><b>Vincular planilha</b><small>opcional — puxe a volumetria dos eventos</small></span>
+       <button class="funnel-data__act" id="funnel-data-add">Anexar</button>`;
+  }
+  slot.querySelector("#funnel-data-add, #funnel-data-replace")?.addEventListener("click", () => $("#funnel-data-fileinput").click());
+}
+
+function eventOptionsHTML(selected) {
+  const opts = [`<option value="">— volume manual —</option>`];
+  state.events.forEach((e) => {
+    const sel = e.name === selected ? " selected" : "";
+    opts.push(`<option value="${e.name.replace(/"/g, "&quot;")}"${sel}>${e.name}${e.macro ? " (macro)" : ""}</option>`);
+  });
+  return opts.join("");
+}
+
+function renderFunnelList() {
+  const box = $("#funnel-list");
+  box.innerHTML = "";
+  const steps = funnelSteps();
+  $("#funnel-empty").hidden = steps.length > 0;
+  $("#funnel-count").textContent = steps.length;
+  const linkable = hasEvents();
+  steps.forEach((s, i) => {
+    const item = el("div", "funnel-item");
+    item.dataset.id = s.id; item.draggable = true;
+    item.style.setProperty("--rc", funnelColor(i, steps.length));
+    const ev = s.eventName ? state.events.find((e) => e.name === s.eventName) : null;
+    const metric = s.metric || "users";
+    const bindHTML = !linkable ? "" :
+      `<div class="funnel-bind">
+         <select class="funnel-ev" data-ev="${s.id}" title="Vincular a um evento da planilha">${eventOptionsHTML(s.eventName)}</select>
+         ${ev ? `<div class="funnel-metric" role="group">
+             <button type="button" data-m="users" class="${metric === "users" ? "is-active" : ""}" title="total_users">Usuários</button>
+             <button type="button" data-m="count" class="${metric === "count" ? "is-active" : ""}" title="event_count">Cliques</button>
+           </div>` : ""}
+       </div>`;
+    item.innerHTML =
+      `<span class="funnel-item__handle" title="Arraste para reordenar"><svg viewBox="0 0 12 16" fill="currentColor"><circle cx="3" cy="3" r="1.3"/><circle cx="9" cy="3" r="1.3"/><circle cx="3" cy="8" r="1.3"/><circle cx="9" cy="8" r="1.3"/><circle cx="3" cy="13" r="1.3"/><circle cx="9" cy="13" r="1.3"/></svg></span>
+       <span class="funnel-item__idx">${i + 1}</span>
+       <img class="funnel-item__thumb" src="${s.imageURL}" alt="" data-fstep="${s.id}" />
+       <span class="funnel-item__meta">
+         <span class="funnel-item__name">${s.name}</span>
+         ${bindHTML}
+         <input class="funnel-vol${ev ? " is-linked" : ""}" inputmode="numeric" placeholder="usuários que acessaram" value="${s.volume ? fmtInt(s.volume) : ""}" data-vol="${s.id}" title="${ev ? "Puxado da planilha — edite para inserir manualmente" : "Digite a volumetria"}" />
+       </span>
+       <button class="funnel-item__remove" title="Remover etapa" data-remove="${s.id}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
+    item.querySelector("[data-remove]").addEventListener("click", (e) => { e.stopPropagation(); removeFunnelStep(s.id); });
+
+    const vol = item.querySelector("[data-vol]");
+    vol.addEventListener("input", () => {
+      s.volume = parseInt(vol.value.replace(/\D/g, ""), 10) || 0;
+      s.eventName = null; // digitar manualmente desvincula
+      renderFunnelViz();
+    });
+    vol.addEventListener("blur", () => {
+      vol.value = s.volume ? fmtInt(s.volume) : "";
+      if (!s.eventName) renderFunnelList();
+    });
+    vol.addEventListener("pointerdown", (e) => e.stopPropagation());
+
+    const sel = item.querySelector(".funnel-ev");
+    if (sel) {
+      sel.addEventListener("pointerdown", (e) => e.stopPropagation());
+      sel.addEventListener("change", () => {
+        const name = sel.value;
+        if (!name) { s.eventName = null; }
+        else {
+          const e2 = state.events.find((e) => e.name === name);
+          s.eventName = name; s.metric = s.metric || "users";
+          if (e2) s.volume = stepMetricValue(e2, s.metric);
+        }
+        renderFunnelList(); renderFunnelViz();
+      });
+    }
+    item.querySelectorAll(".funnel-metric button").forEach((btn) => {
+      btn.addEventListener("pointerdown", (e) => e.stopPropagation());
+      btn.addEventListener("click", () => {
+        s.metric = btn.dataset.m;
+        const e2 = state.events.find((e) => e.name === s.eventName);
+        if (e2) s.volume = stepMetricValue(e2, s.metric);
+        renderFunnelList(); renderFunnelViz();
+      });
+    });
+
+    // Hover preview + click-to-view on the thumbnail
+    const thumb = item.querySelector(".funnel-item__thumb");
+    thumb.addEventListener("mouseenter", (e) => showFunnelPreview(s, e));
+    thumb.addEventListener("mousemove", moveFunnelPreview);
+    thumb.addEventListener("mouseleave", hideFunnelPreview);
+    thumb.addEventListener("click", (e) => { e.stopPropagation(); hideFunnelPreview(); openFunnelLightbox(s.id); });
+
+    box.appendChild(item);
+  });
+  makeFunnelReorderable(box);
+}
+
+const funnelColor = (i, n) => {
+  const t = n > 1 ? i / (n - 1) : 0; // brand (topo) → info (fundo)
+  return `color-mix(in srgb, var(--brand-pure) ${Math.round((1 - t) * 100)}%, var(--info-pure))`;
+};
+
+function makeFunnelReorderable(container) {
+  let dragId = null;
+  const items = $$(".funnel-item", container);
+  const clear = () => items.forEach((n) => n.classList.remove("drop-before", "drop-after"));
+  items.forEach((node) => {
+    node.addEventListener("dragstart", (e) => { dragId = node.dataset.id; node.classList.add("is-dragging"); e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", dragId); } catch {} });
+    node.addEventListener("dragend", () => { node.classList.remove("is-dragging"); clear(); dragId = null; });
+    node.addEventListener("dragover", (e) => { e.preventDefault(); if (node.dataset.id === dragId) return; const r = node.getBoundingClientRect(); const before = e.clientY < r.top + r.height / 2; clear(); node.classList.add(before ? "drop-before" : "drop-after"); });
+    node.addEventListener("drop", (e) => {
+      e.preventDefault(); const r = node.getBoundingClientRect(); const before = e.clientY < r.top + r.height / 2;
+      const arr = funnelSteps(); const from = arr.findIndex((s) => s.id === dragId);
+      if (from < 0 || dragId === node.dataset.id) { clear(); return; }
+      const [moved] = arr.splice(from, 1);
+      let to = arr.findIndex((s) => s.id === node.dataset.id); if (!before) to += 1;
+      arr.splice(to, 0, moved); clear(); renderFunnel();
+    });
+  });
+}
+
+function funnelMetrics() {
+  const steps = funnelSteps();
+  const v0 = steps[0]?.volume || 0;
+  const maxV = Math.max(...steps.map((s) => s.volume || 0), 1);
+  return steps.map((s, i) => {
+    const prev = i > 0 ? (steps[i - 1].volume || 0) : null;
+    const pass = prev ? (s.volume || 0) / prev : 1;   // pass-through do passo anterior
+    const drop = prev ? 1 - pass : 0;                 // queda (pode ser negativa = crescimento)
+    const conv = v0 ? (s.volume || 0) / v0 : 0;        // conversão desde o topo
+    return { step: s, i, prev, pass, drop, conv, barW: (s.volume || 0) / maxV };
+  });
+}
+
+function renderFunnelViz() {
+  const steps = funnelSteps();
+  const ready = steps.length >= 2 && steps.every((s) => (s.volume || 0) > 0);
+  $("#funnel-canvas-empty").hidden = steps.length > 0;
+  $("#funnel-view").hidden = steps.length === 0;
+  const summary = $("#funnel-summary"), chart = $("#funnel-chart"), toolbar = $("#funnel-toolbar");
+
+  if (steps.length === 0) return;
+  if (!ready) {
+    summary.innerHTML = ""; toolbar.innerHTML = "";
+    chart.innerHTML = `<div class="card__empty" style="text-align:center;padding:24px">Informe a volumetria (usuários que acessaram) de <b>todas</b> as etapas — digite ou vincule a um evento da planilha — para calcular quedas e conversão.</div>`;
+    return;
+  }
+
+  const m = funnelMetrics();
+  const overall = m[m.length - 1].conv;
+  const biggest = m.slice(1).reduce((a, b) => (b.drop > a.drop ? b : a), m[1]);
+  summary.innerHTML =
+    `<div class="fsum"><span class="fsum__label">Conversão total</span><span class="fsum__val accent">${fmtPct(overall)}</span><span class="fsum__sub">${fmtInt(steps[steps.length - 1].volume)} de ${fmtInt(steps[0].volume)}</span></div>
+     <div class="fsum"><span class="fsum__label">Etapas</span><span class="fsum__val">${steps.length}</span><span class="fsum__sub">${fmtInt(steps[0].volume - steps[steps.length - 1].volume)} usuários perdidos no total</span></div>
+     <div class="fsum"><span class="fsum__label">Maior queda</span><span class="fsum__val bad">${fmtPct(biggest.drop)}</span><span class="fsum__sub">entre etapa ${biggest.i} e ${biggest.i + 1} · ${biggest.step.name}</span></div>`;
+
+  // Toolbar: X→Y caption + visualization switcher
+  toolbar.innerHTML =
+    `<div class="funnel-cap"><b>${steps[0].name}</b> <span class="funnel-cap__arrow">→</span> <b>${steps[steps.length - 1].name}</b> · ${steps.length} etapas</div>
+     <div class="funnel-vizswitch" role="group" aria-label="Modo de visualização">
+       <button type="button" data-viz="bars" class="${state.funnel.viz === "bars" ? "is-active" : ""}" title="Barras horizontais">
+         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h11M4 18h6"/></svg>Barras</button>
+       <button type="button" data-viz="columns" class="${state.funnel.viz === "columns" ? "is-active" : ""}" title="Colunas (conversão do topo)">
+         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 20V10M12 20V4M18 20v-7"/></svg>Colunas</button>
+     </div>`;
+  toolbar.querySelectorAll("[data-viz]").forEach((b) => b.addEventListener("click", () => {
+    state.funnel.viz = b.dataset.viz; renderFunnelViz();
+  }));
+
+  chart.className = "funnel-chart viz-" + state.funnel.viz;
+  chart.innerHTML = "";
+  if (state.funnel.viz === "columns") renderFunnelColumns(chart, m, steps);
+  else renderFunnelBars(chart, m, steps);
+  wireFunnelChartInteractions(chart);
+}
+
+function renderFunnelBars(chart, m, steps) {
+  m.forEach((row) => {
+    if (row.i > 0) {
+      const loss = row.drop >= 0;
+      const conn = el("div", "funnel-drop",
+        `<span class="funnel-drop__pill ${loss ? "loss" : "gain"}">${loss ? "▼ -" : "▲ +"}${(Math.abs(row.drop) * 100).toFixed(1).replace(".", ",")}%</span>
+         <span class="funnel-drop__pass">${fmtInt(row.step.volume)} seguiram (${(row.pass * 100).toFixed(0)}%)</span>`);
+      chart.appendChild(conn);
+    }
+    const stepEl = el("div", "funnel-step");
+    stepEl.dataset.fstep = row.step.id;
+    const w = Math.max(0.1, row.barW) * 100;
+    stepEl.innerHTML =
+      `<div class="funnel-step__label">${row.i + 1}. ${row.step.name}</div>
+       <div class="funnel-step__barwrap">
+         <div class="funnel-step__bar" style="width:${w}%;background:${funnelColor(row.i, steps.length)}">
+           <span class="funnel-step__vol">${fmtInt(row.step.volume)}</span>
+         </div>
+       </div>
+       <div class="funnel-step__side"><span class="funnel-step__conv">${fmtPct(row.conv)}</span><small>do topo</small></div>`;
+    chart.appendChild(stepEl);
+  });
+}
+
+/* Maze-style: full-height columns, solid fill to conversion-from-top, hatched remainder. */
+function renderFunnelColumns(chart, m, steps) {
+  m.forEach((row) => {
+    const col = el("div", "fcol");
+    col.dataset.fstep = row.step.id;
+    const h = Math.max(0.6, row.conv * 100); // keep a sliver visible for tiny conversions
+    const dropTag = row.i > 0
+      ? `<span class="fcol__drop ${row.drop >= 0 ? "loss" : "gain"}">${row.drop >= 0 ? "▼ " : "▲ +"}${(Math.abs(row.drop) * 100).toFixed(1).replace(".", ",")}%</span>`
+      : `<span class="fcol__drop is-top">topo</span>`;
+    col.innerHTML =
+      `<div class="fcol__val"><b>${fmtPct(row.conv)}</b><span>${fmtInt(row.step.volume)}</span></div>
+       <div class="fcol__track">
+         <div class="fcol__fill" style="height:${h}%;background:${funnelColor(row.i, steps.length)}"><img class="fcol__peek" src="${row.step.imageURL}" alt="" /></div>
+       </div>
+       ${dropTag}
+       <div class="fcol__name" title="${row.step.name}">${row.i + 1}. ${row.step.name}</div>`;
+    chart.appendChild(col);
+  });
+}
+
+function wireFunnelChartInteractions(chart) {
+  chart.querySelectorAll("[data-fstep]").forEach((node) => {
+    const s = funnelSteps().find((x) => x.id === node.dataset.fstep);
+    if (!s) return;
+    node.classList.add("is-clickable");
+    node.addEventListener("mouseenter", (e) => showFunnelPreview(s, e));
+    node.addEventListener("mousemove", moveFunnelPreview);
+    node.addEventListener("mouseleave", hideFunnelPreview);
+    node.addEventListener("click", () => { hideFunnelPreview(); openFunnelLightbox(s.id); });
+  });
+}
+
+/* ---- Hover preview (floating screenshot) ------------------ */
+let _fpreview = null;
+function fpreviewEl() {
+  if (!_fpreview) {
+    _fpreview = el("div", "funnel-preview");
+    _fpreview.hidden = true;
+    document.body.appendChild(_fpreview);
+  }
+  return _fpreview;
+}
+function showFunnelPreview(s, e) {
+  if (document.querySelector(".funnel-item.is-dragging")) return;
+  const p = fpreviewEl();
+  p.innerHTML = `<img src="${s.imageURL}" alt="" /><span class="funnel-preview__cap">${s.name}${s.volume ? " · " + fmtInt(s.volume) + " acessos" : ""}</span>`;
+  p.hidden = false;
+  moveFunnelPreview(e);
+}
+function moveFunnelPreview(e) {
+  const p = _fpreview; if (!p || p.hidden) return;
+  const pad = 16, w = 240, h = 320;
+  let x = e.clientX + pad, y = e.clientY + pad;
+  if (x + w > innerWidth) x = e.clientX - w - pad;
+  if (y + h > innerHeight) y = Math.max(pad, innerHeight - h - pad);
+  p.style.left = x + "px"; p.style.top = y + "px";
+}
+function hideFunnelPreview() { if (_fpreview) _fpreview.hidden = true; }
+
+/* ---- Lightbox (click a step to see its screenshot) -------- */
+function openFunnelLightbox(id) {
+  const steps = funnelSteps();
+  const idx = steps.findIndex((s) => s.id === id);
+  if (idx < 0) return;
+  const s = steps[idx];
+  state.funnel.selectedId = id;
+  const m = funnelMetrics()[idx];
+  const ev = s.eventName ? state.events.find((e) => e.name === s.eventName) : null;
+  const rows = [
+    ["Volumetria", `${fmtInt(s.volume)} acessos`],
+    ["Conversão do topo", m ? fmtPct(m.conv) : "—"],
+    idx > 0 ? ["Passagem da etapa anterior", m ? `${(m.pass * 100).toFixed(1).replace(".", ",")}%` : "—"] : ["Posição", "Topo do funil"],
+    ["Origem do dado", ev ? `${s.eventName} · ${s.metric === "count" ? "event_count" : "total_users"}` : "manual"],
+  ];
+  $("#funnel-lb-title").textContent = `${idx + 1}. ${s.name}`;
+  $("#funnel-lb-img").src = s.imageURL;
+  $("#funnel-lb-stats").innerHTML = rows.map(([k, v]) => `<div class="flb__row"><span>${k}</span><b>${v}</b></div>`).join("");
+  const prev = $("#funnel-lb-prev"), next = $("#funnel-lb-next");
+  prev.disabled = idx === 0; next.disabled = idx === steps.length - 1;
+  prev.onclick = () => idx > 0 && openFunnelLightbox(steps[idx - 1].id);
+  next.onclick = () => idx < steps.length - 1 && openFunnelLightbox(steps[idx + 1].id);
+  $("#funnel-lightbox").hidden = false;
+}
+function closeFunnelLightbox() { $("#funnel-lightbox").hidden = true; state.funnel.selectedId = null; }
+
+function addFunnelSteps(files) {
+  const imgs = [...files].filter((f) => f.type.startsWith("image/"));
+  if (!imgs.length) { toast("Selecione arquivos de imagem (PNG, JPG ou WebP).", "error"); return; }
+  Promise.all(imgs.map((f) => new Promise((res) => {
+    const fr = new FileReader();
+    fr.onload = () => res({ id: "fs" + Date.now() + Math.random().toString(36).slice(2, 6), name: f.name.replace(/\.[^.]+$/, ""), file: f.name, imageURL: fr.result, volume: 0 });
+    fr.readAsDataURL(f);
+  }))).then((created) => {
+    funnelSteps().push(...created);
+    renderFunnel();
+    toast(`${created.length} etapa(s) adicionada(s). Informe a volumetria de cada uma.`, "success");
+  });
+}
+
+function removeFunnelStep(id) {
+  const arr = funnelSteps(); const i = arr.findIndex((s) => s.id === id);
+  if (i < 0) return;
+  arr.splice(i, 1); renderFunnel();
+}
+
+function loadFunnelExample() {
+  const svg = (label, tone) => "data:image/svg+xml;utf8," + encodeURIComponent(
+    `<svg xmlns='http://www.w3.org/2000/svg' width='120' height='200'><rect width='120' height='200' fill='${tone}'/><rect x='14' y='20' width='92' height='24' rx='6' fill='#ffffff22'/><rect x='14' y='60' width='92' height='70' rx='8' fill='#ffffff14'/><rect x='14' y='150' width='92' height='30' rx='15' fill='#fbc10566'/></svg>`);
+  const S = [
+    ["Home", 120000, "#12203f"], ["Lista de produtos", 84000, "#182a52"],
+    ["Detalhe do produto", 41000, "#20244a"], ["Carrinho", 22500, "#2a2140"],
+    ["Checkout", 9800, "#3a2f12"],
+  ];
+  state.funnel.steps = S.map(([name, volume, tone], i) => ({ id: "fx" + i, name, file: name + ".png", imageURL: svg(name, tone), volume, eventName: null, metric: "users" }));
+  renderFunnel();
+  toast("Funil de exemplo carregado — arraste as etapas para reordenar e edite a volumetria.", "success", 4200);
+}
+
+/* Load a spreadsheet from within the funnel panel (shares state.events). */
+async function loadFunnelSpreadsheet(file) {
+  await loadSpreadsheet(file);      // parses + fills state.events, shows its own toast
+  syncFunnelBindings();
+  if (state.mode === "funnel") renderFunnel();
+}
+
+/* ============================================================
    Controls
    ============================================================ */
 function initControls() {
@@ -1374,6 +1745,27 @@ function initControls() {
     tu.closest(".inputwrap").classList.toggle("is-ok", v > 0);
     renderInsights(); renderRegionDetail(state.selectedId); if (state.show.heatmap) drawHeatmap(1);
   });
+
+  // Mode nav (Análise / Funil)
+  $("#modenav").addEventListener("click", (e) => { const b = e.target.closest(".modenav__btn"); if (b) setMode(b.dataset.mode); });
+
+  // Funnel: uploads + example
+  const ffi = $("#funnel-fileinput"), fdz = $("#funnel-dropzone");
+  ffi.addEventListener("change", () => { if (ffi.files.length) addFunnelSteps(ffi.files); ffi.value = ""; });
+  ["dragover", "dragenter"].forEach((ev) => fdz.addEventListener(ev, (e) => { e.preventDefault(); fdz.classList.add("is-drag"); }));
+  ["dragleave", "drop"].forEach((ev) => fdz.addEventListener(ev, (e) => { e.preventDefault(); fdz.classList.remove("is-drag"); }));
+  fdz.addEventListener("drop", (e) => { if (e.dataTransfer.files.length) addFunnelSteps(e.dataTransfer.files); });
+  $("#funnel-empty-add").addEventListener("click", () => ffi.click());
+  $("#funnel-example").addEventListener("click", loadFunnelExample);
+  $("#funnel-empty-example").addEventListener("click", loadFunnelExample);
+
+  // Funnel: spreadsheet source (event → step binding)
+  const fdi = $("#funnel-data-fileinput");
+  fdi.addEventListener("change", () => { if (fdi.files.length) loadFunnelSpreadsheet(fdi.files[0]); fdi.value = ""; });
+
+  // Funnel: lightbox (click a step to see its screenshot)
+  $("#funnel-lb-close").addEventListener("click", closeFunnelLightbox);
+  $("#funnel-lightbox").addEventListener("click", (e) => { if (e.target.id === "funnel-lightbox") closeFunnelLightbox(); });
 
   // Layer show/hide toggles (Regiões / Heatmap)
   $("#layers").addEventListener("click", (e) => { const b = e.target.closest(".layer-toggle"); if (b) toggleLayer(b.dataset.layer); });
@@ -1481,6 +1873,7 @@ function initControls() {
 
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
+      hideFunnelPreview();
       const openModal = $$(".modal-backdrop").find((m) => !m.hidden);
       if (openModal) { openModal.hidden = true; return; }
       state.armedEvent = null; stage.classList.remove("is-armed"); overlay.classList.remove("is-drawing"); selectRegion(null); renderEvents();

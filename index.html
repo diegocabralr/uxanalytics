@@ -23,9 +23,21 @@
         <div class="brand__mark">UX</div>
         <div class="brand__name"><b>UX</b> Analytics</div>
       </div>
+
+      <nav class="modenav" id="modenav">
+        <button class="modenav__btn is-active" data-mode="analysis">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>
+          Análise
+        </button>
+        <button class="modenav__btn" data-mode="funnel">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18l-7 8v6l-4 2v-8L3 4Z"/></svg>
+          Funil
+        </button>
+      </nav>
+
       <div class="topbar__spacer"></div>
-      <span class="pill pill--muted"><span class="mono" id="stat-images">0</span>&nbsp;imagens</span>
-      <span class="pill pill--brand"><span class="mono" id="stat-mapped">0</span>&nbsp;posicionados</span>
+      <span class="pill pill--muted" id="pill-images"><span class="mono" id="stat-images">0</span>&nbsp;imagens</span>
+      <span class="pill pill--brand" id="pill-mapped"><span class="mono" id="stat-mapped">0</span>&nbsp;posicionados</span>
       <button class="icon-btn" id="theme-toggle" title="Alternar tema" aria-label="Alternar tema">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>
@@ -33,8 +45,8 @@
       </button>
     </header>
 
-    <!-- ================= WORKSPACE ================= -->
-    <div class="workspace">
+    <!-- ================= WORKSPACE (Análise) ================= -->
+    <div class="workspace" id="workspace-analysis">
 
       <!-- ---------- LEFT PANEL ---------- -->
       <aside class="panel panel--left">
@@ -328,6 +340,92 @@
           </button>
         </div>
       </aside>
+    </div>
+
+    <!-- ================= WORKSPACE (Funil) ================= -->
+    <div class="funnel-ws" id="workspace-funnel" hidden>
+      <!-- Left: steps -->
+      <aside class="panel panel--left">
+        <div class="section">
+          <div class="section__head">
+            <span class="eyebrow">Etapas do funil</span>
+            <span class="section__count" id="funnel-count">0</span>
+          </div>
+          <div class="funnel-list" id="funnel-list"><!-- rendered by JS --></div>
+          <p class="section__empty" id="funnel-empty">Cada etapa é uma página do fluxo. Suba os prints na ordem e informe a volumetria de acesso de cada um.</p>
+
+          <label class="dropzone" id="funnel-dropzone">
+            <input type="file" accept="image/png,image/jpeg,image/webp" hidden id="funnel-fileinput" multiple />
+            <div class="dropzone__icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0L7 9m5-5 5 5"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg>
+            </div>
+            <span class="dropzone__title">Adicionar etapa(s)</span>
+            <span class="dropzone__hint">PNG, JPG, WebP · arraste na ordem do fluxo</span>
+          </label>
+          <button class="btn btn--ghost btn--block btn--sm" id="funnel-example">Carregar exemplo</button>
+        </div>
+
+        <div class="section">
+          <span class="eyebrow">Dados de eventos</span>
+          <div class="funnel-data" id="funnel-data"><!-- rendered by JS --></div>
+          <input type="file" accept=".xlsx,.csv,.tsv" hidden id="funnel-data-fileinput" />
+          <p class="section__empty">Vincule cada etapa a um evento da planilha e escolha a métrica (usuários ou cliques) — a volumetria é preenchida automaticamente.</p>
+        </div>
+
+        <div class="section">
+          <span class="eyebrow">Como funciona</span>
+          <div class="hint-callout">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg>
+            <span>A volumetria é o total de usuários que <b>acessou</b> cada página (do GA/Looker). O funil calcula a <b>queda</b> e a <b>conversão</b> entre etapas, reaproveitando o mesmo dado de <code>total_users</code>.</span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main: funnel visualization -->
+      <main class="funnel-stage" id="funnel-stage">
+        <div class="funnel-canvas-empty" id="funnel-canvas-empty">
+          <div class="canvas-empty__icon">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18l-7 8v6l-4 2v-8L3 4Z"/></svg>
+          </div>
+          <h2 class="canvas-empty__title">Monte seu funil</h2>
+          <p class="canvas-empty__text">Adicione as páginas do fluxo (na ordem), informe quantos usuários acessaram cada uma e veja as quedas e a conversão de ponta a ponta.</p>
+          <div class="canvas-empty__actions">
+            <button class="btn btn--brand" id="funnel-empty-add">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+              Adicionar etapas
+            </button>
+            <button class="btn btn--outline" id="funnel-empty-example">Carregar exemplo</button>
+          </div>
+        </div>
+
+        <div class="funnel-view" id="funnel-view" hidden>
+          <div class="funnel-summary" id="funnel-summary"><!-- rendered by JS --></div>
+          <div class="funnel-toolbar" id="funnel-toolbar"><!-- rendered by JS --></div>
+          <div class="funnel-chart" id="funnel-chart"><!-- rendered by JS --></div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Funnel step lightbox: click a step to see its screenshot -->
+  <div class="modal-backdrop funnel-lightbox" id="funnel-lightbox" hidden>
+    <div class="flb" role="dialog" aria-modal="true">
+      <div class="flb__head">
+        <span class="modal__title" id="funnel-lb-title">Etapa</span>
+        <button class="modal__close" id="funnel-lb-close" aria-label="Fechar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <div class="flb__body">
+        <div class="flb__imgwrap"><img id="funnel-lb-img" alt="" /></div>
+        <div class="flb__side">
+          <div class="flb__stats" id="funnel-lb-stats"><!-- rendered by JS --></div>
+          <div class="flb__nav">
+            <button class="btn btn--outline btn--sm" id="funnel-lb-prev">← Anterior</button>
+            <button class="btn btn--outline btn--sm" id="funnel-lb-next">Próxima →</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
