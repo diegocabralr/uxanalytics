@@ -52,9 +52,16 @@ const hasFigmaEmbed = () => curScreen()?.type === "figma-embed";
 const isFigmaScreen = () => !!curScreen()?.figmaKey || hasFigmaEmbed();
 const hasScreen = () => hasImage() || hasFigmaEmbed();
 const hasEvents = () => state.events.length > 0;
-const canAnalyze = () => !!curScreen() && activeRegions().length > 0 && state.totalUsers > 0;
+const canAnalyze = () => !!curScreen() && analysisRegions().length > 0 && state.totalUsers > 0;
 const regionColor = (i) => chartColor(i + 1);
-const regionIndex = (id) => regions().findIndex((r) => r.id === id);
+const regionIndex = (id) => {
+  const set = analysisRegions();
+  const direct = set.findIndex((r) => r.id === id);
+  if (direct >= 0) return direct;
+  // joint mode: the analysis set may hold a sibling's region for the same event
+  const r = regions().find((x) => x.id === id);
+  return r ? set.findIndex((x) => x.event === r.event) : -1;
+};
 /* Regions relevant to the current view. For a Figma embed, a rectangle belongs
    only to the frame/state it was drawn on (nodeId), so navigating the prototype
    shows just that frame's rectangles. */
@@ -62,6 +69,23 @@ const activeRegions = () => {
   const all = regions();
   return (hasFigmaEmbed() && state.figmaNode) ? all.filter((r) => r.nodeId === state.figmaNode) : all;
 };
+/* Regions used for the INSIGHTS (ranking, concentration, scroll, heatmap,
+   export). For a variant/use-case group we read the group jointly: the union
+   of every screen's mapped components, deduped by event — so the analysis
+   reflects the whole use case, not one screen. Rectangle editing still uses
+   activeRegions() (only the current screen's own rectangles are draggable). */
+const isJointGroup = () => { const s = curScreen(); if (!s || hasFigmaEmbed()) return false; const g = groupInfo(s.id); return !!(g && g.multi && g.group.kind === "variant"); };
+function analysisRegions() {
+  const s = curScreen();
+  if (!s) return [];
+  const g = groupInfo(s.id);
+  if (g && g.multi && g.group.kind === "variant") {
+    const seen = new Set(), out = [];
+    g.group.items.forEach((it) => (it.screen.regions || []).forEach((r) => { if (!seen.has(r.event)) { seen.add(r.event); out.push(r); } }));
+    return out;
+  }
+  return activeRegions();
+}
 const eventMacro = (name) => state.events.find((e) => e.name === name)?.macro ?? isMacroName(name);
 const usersOf = (name) => state.events.find((e) => e.name === name)?.users || 0;
 
@@ -111,37 +135,117 @@ function toast(msg, tone = "info", ms = 2800) {
 /* ============================================================
    Left panel — images
    ============================================================ */
+/* Screens chained by `sameAsPrev` ("scroll" | "variant") form a same-page group. */
+function screenGroups() {
+  const groups = [];
+  let g = null, letter = 64;
+  state.screens.forEach((s, i) => {
+    if (i === 0 || !s.sameAsPrev) {
+      letter++;
+      g = { id: "g" + i, letter: String.fromCharCode(letter), kind: null, items: [] };
+      groups.push(g);
+    }
+    if (s.sameAsPrev) g.kind = (g.kind && g.kind !== s.sameAsPrev) ? "mixed" : s.sameAsPrev;
+    g.items.push({ screen: s, index: i, ordinal: g.items.length + 1 });
+  });
+  return groups;
+}
+const cloneRegions = (regs) => regs.map((r, k) => ({ ...r, id: "rg" + Date.now().toString(36) + k + Math.random().toString(36).slice(2, 5) }));
+
+/* When a screen joins a same-page group, copy the mapping from the nearest
+   preceding group member that already has regions — so the same selections
+   (and thus the heatmap + insights) carry across the group for a joint read.
+   Never overwrites an existing mapping. */
+function inheritGroupRegions(i) {
+  const target = state.screens[i];
+  if (!target || (target.regions?.length || 0) > 0) return;
+  for (let k = i - 1; k >= 0; k--) {
+    const prev = state.screens[k];
+    if (prev.regions?.length) {
+      target.regions = cloneRegions(prev.regions);
+      toast(`Mapeamento da página copiado para "${target.name}" — ajuste as regiões se o scroll/variante mudar as posições.`, "success", 4600);
+      return;
+    }
+    if (!prev.sameAsPrev) break; // prev é a base do grupo; para após checá-la
+  }
+}
+
+function groupInfo(screenId) {
+  const groups = screenGroups();
+  for (let gi = 0; gi < groups.length; gi++) {
+    const it = groups[gi].items.find((x) => x.screen.id === screenId);
+    if (it) return { group: groups[gi], item: it, colorIdx: gi, multi: groups[gi].items.length > 1 };
+  }
+  return null;
+}
+const GROUP_KIND = {
+  scroll:  { word: "scroll",   verb: "próximo scroll",       icon: "↓" },
+  variant: { word: "variante", verb: "variante / filtro",    icon: "⌥" },
+  mixed:   { word: "parte",    verb: "mesma página",          icon: "≡" },
+};
+function groupBadgeHTML(info) {
+  if (!info || !info.multi) return "";
+  const k = GROUP_KIND[info.group.kind] || GROUP_KIND.mixed;
+  return `<span class="grouptag" style="--gc:${regionColor(info.colorIdx)}" title="Mesma página — ${k.verb}">
+    <span class="grouptag__dot"></span>Pág. ${info.group.letter} · ${k.word} ${info.item.ordinal}</span>`;
+}
+
 function renderImageList() {
   const box = $("#imglist");
   box.innerHTML = "";
   $("#imglist-empty").hidden = state.screens.length > 0;
+  if (state.screens[0]) state.screens[0].sameAsPrev = null; // 1ª imagem nunca herda
   state.screens.forEach((s, i) => {
     const active = i === state.screenIndex;
-    const item = el("button", "imgitem" + (active ? " is-active" : ""));
+    const info = groupInfo(s.id);
+    const item = el("div", "imgitem" + (active ? " is-active" : "") + (info && info.multi ? " is-grouped" : ""));
     item.dataset.id = s.id;
+    item.setAttribute("role", "button"); item.tabIndex = 0;
     item.draggable = true;
+    if (info && info.multi) item.style.setProperty("--gc", regionColor(info.colorIdx));
     const thumb = (s.type === "figma-embed")
       ? `<span class="imgitem__thumb-img" style="display:grid;place-items:center;color:var(--content-02)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M12 3v6m0 0a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg></span>`
       : `<img class="imgitem__thumb-img" src="${s.imageURL}" alt="" />`;
+    const relSelect = i === 0 ? "" :
+      `<select class="imgitem__rel" data-rel="${s.id}" title="Relação com a imagem anterior">
+         <option value=""${!s.sameAsPrev ? " selected" : ""}>Página independente</option>
+         <option value="scroll"${s.sameAsPrev === "scroll" ? " selected" : ""}>↓ Mesma página · scroll</option>
+         <option value="variant"${s.sameAsPrev === "variant" ? " selected" : ""}>⌥ Mesma página · variante/filtro</option>
+       </select>`;
     item.innerHTML =
       `<span class="imgitem__handle" title="Arraste para reordenar"><svg viewBox="0 0 12 16" fill="currentColor"><circle cx="3" cy="3" r="1.3"/><circle cx="9" cy="3" r="1.3"/><circle cx="3" cy="8" r="1.3"/><circle cx="9" cy="8" r="1.3"/><circle cx="3" cy="13" r="1.3"/><circle cx="9" cy="13" r="1.3"/></svg></span>
        ${thumb}
        <span class="imgitem__meta">
          <span class="imgitem__name">${s.name}</span>
          <span class="imgitem__file">${s.file}</span>
+         ${groupBadgeHTML(info)}
+         ${relSelect}
        </span>
        ${active ? '<span class="imgitem__badge"></span>' : ""}
        <button class="imgitem__remove" title="Remover imagem" data-remove="${s.id}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
     item.addEventListener("click", (e) => {
-      if (e.target.closest("[data-remove]")) { removeImage(s.id); return; }
+      if (e.target.closest("[data-remove]") || e.target.closest(".imgitem__rel")) return;
       switchScreen(i);
     });
+    item.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); switchScreen(i); } });
+    item.querySelector("[data-remove]")?.addEventListener("click", (e) => { e.stopPropagation(); removeImage(s.id); });
+    const rel = item.querySelector(".imgitem__rel");
+    if (rel) {
+      rel.addEventListener("pointerdown", (e) => e.stopPropagation());
+      rel.addEventListener("click", (e) => e.stopPropagation());
+      rel.addEventListener("change", () => {
+        s.sameAsPrev = rel.value || null;
+        if (s.sameAsPrev) inheritGroupRegions(i); // mesma página → herda o mapeamento
+        renderAll();
+      });
+    }
     box.appendChild(item);
   });
   makeReorderable(box, ".imgitem", "vertical");
   $("#img-count").textContent = state.screens.length;
   $("#stat-images").textContent = state.screens.length;
   $("#stat-mapped").textContent = activeRegions().length;
+  updateCompareAvailability();
 }
 
 function renderTabs() {
@@ -149,11 +253,15 @@ function renderTabs() {
   box.innerHTML = "";
   state.screens.forEach((s, i) => {
     const active = i === state.screenIndex;
-    const tab = el("button", "tab" + (active ? " is-active" : ""));
+    const info = groupInfo(s.id);
+    const tab = el("button", "tab" + (active ? " is-active" : "") + (info && info.multi ? " is-grouped" : ""));
     tab.dataset.id = s.id;
     tab.draggable = true;
+    if (info && info.multi) tab.style.setProperty("--gc", regionColor(info.colorIdx));
+    const gk = info && info.multi ? (GROUP_KIND[info.group.kind] || GROUP_KIND.mixed) : null;
+    const gtag = gk ? `<span class="tab__group" title="Mesma página — ${gk.verb}">${gk.icon} ${gk.word} ${info.item.ordinal}</span>` : "";
     tab.innerHTML =
-      `${active ? '<span class="tab__dot"></span>' : ""}<b>${s.name}</b><span class="tab__file">${s.file}</span>
+      `${active ? '<span class="tab__dot"></span>' : ""}<b>${s.name}</b>${gtag}<span class="tab__file">${s.file}</span>
        <span class="tab__remove" data-remove="${s.id}" title="Remover"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></svg></span>`;
     tab.addEventListener("click", (e) => {
       if (e.target.closest("[data-remove]")) { removeImage(s.id); return; }
@@ -355,18 +463,16 @@ function renderRegions() {
   overlay.querySelectorAll(".region").forEach((n) => n.remove());
   activeRegions().forEach((r) => {
     const idx = regionIndex(r.id);
-    const color = regionColor(idx);
     const node = el("div", "region");
     node.dataset.id = r.id;
-    node.style.setProperty("--rc", color);
+    // Todos os retângulos usam a mesma cor de marca (amarelo); a identificação
+    // por componente é feita pelo número, não pela cor.
+    node.style.setProperty("--rc", "var(--brand-pure)");
     positionRegion(node, r);
-    const cnt = countOf(r.event, counts()), usr = usersOf(r.event);
-    const meta = cnt ? `<span class="region__meta">${fmtK(cnt)} cliques${usr ? " · " + fmtK(usr) + " users" : ""}</span>` : "";
     node.innerHTML =
       `<span class="region__tags">
          <span class="region__label"><span class="region__num">${idx + 1}</span><span>${r.event}</span>
            <button class="region__remove" title="Remover" data-remove="${r.id}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></span>
-         ${meta}
        </span>
        <span class="region__handle nw"></span><span class="region__handle ne"></span>
        <span class="region__handle sw"></span><span class="region__handle se"></span>`;
@@ -532,13 +638,26 @@ function syncHighlight() {
 /* ============================================================
    Right panel — insights
    ============================================================ */
-function renderInsights() { renderConcentration(); renderRank(); renderScroll(); }
+function renderInsights() { updateJointBanner(); renderConcentration(); renderRank(); renderScroll(); }
+
+/* Banner telling the user the insights are read jointly across a variant group. */
+function updateJointBanner() {
+  const el2 = $("#joint-banner"); if (!el2) return;
+  const s = curScreen();
+  const g = s ? groupInfo(s.id) : null;
+  const joint = !!(g && g.multi && g.group.kind === "variant");
+  el2.hidden = !joint;
+  if (joint) {
+    el2.style.setProperty("--gc", regionColor(g.colorIdx));
+    $("#joint-banner-txt").innerHTML = `Análise <b>conjunta</b> · Pág. ${g.group.letter} — ${g.group.items.length} variantes somadas (${analysisRegions().length} componentes)`;
+  }
+}
 
 function renderConcentration() {
   const body = $("#conc-body"), empty = $("#conc-empty");
   if (!canAnalyze()) { body.hidden = true; empty.hidden = false; return; }
   body.hidden = false; empty.hidden = true;
-  const g = concentration(activeRegions(), state.totalUsers, counts());
+  const g = concentration(analysisRegions(), state.totalUsers, counts());
   const lvl = concentrationLevel(g);
   $("#conc-level").textContent = lvl.label;
   $("#conc-level").style.color = `var(--${lvl.tone}-pure)`;
@@ -546,7 +665,7 @@ function renderConcentration() {
   countUp($("#conc-val"), g, 2);
 
   // Which components most drive the score (largest share of total relevance)
-  const rows = ranking(activeRegions(), state.totalUsers, counts());
+  const rows = ranking(analysisRegions(), state.totalUsers, counts());
   const top = rows.slice(0, 3);
   const infl = $("#conc-infl"), list = $("#conc-infl-list");
   if (top.length >= 2) {
@@ -574,7 +693,7 @@ function renderRank() {
       : "Informe o total de usuários no contexto da tela."));
     return;
   }
-  const rows = ranking(activeRegions(), state.totalUsers, counts());
+  const rows = ranking(analysisRegions(), state.totalUsers, counts());
   rows.forEach((row, i) => {
     if (i === rows.cutIndex && rows.cutIndex > 0) box.appendChild(el("div", "pareto-cut", "80% acumulado"));
     const idx = regionIndex(row.region.id), color = regionColor(idx);
@@ -599,7 +718,7 @@ function renderScroll() {
   const host = $("#scrollchart");
   if (!canAnalyze()) { host.innerHTML = ""; $("#scroll-labels").hidden = true; $("#scroll-legend").hidden = true; $("#anomaly-chip").hidden = true; return; }
   $("#scroll-labels").hidden = false;
-  const pts = scrollModel(activeRegions(), state.totalUsers, counts());
+  const pts = scrollModel(analysisRegions(), state.totalUsers, counts());
   $("#anomaly-chip").hidden = !pts.hasAnomaly;
   $("#scroll-legend").hidden = !pts.hasAnomaly;
   const W = 300, H = 140, pl = 10, pr = 10, pt = 12, pb = 20, plotW = W - pl - pr, plotH = H - pt - pb;
@@ -676,7 +795,7 @@ function renderHeatmap(ctx, w, h, { radiusMult = 1, opacity = 0.85, progress = 1
   const icv = document.createElement("canvas"); icv.width = w; icv.height = h;
   const ictx = icv.getContext("2d");
 
-  const rows = ranking(activeRegions(), state.totalUsers, counts()), max = rows.max || 1;
+  const rows = ranking(analysisRegions(), state.totalUsers, counts()), max = rows.max || 1;
   const n = Math.ceil(rows.length * progress);
   const gauss = (rng) => (rng() + rng() + rng() - 1.5); // ~N(0, .5)
 
@@ -753,8 +872,9 @@ function drawRegionsBoard(ctx, w, h) {
   const lh = Math.max(18, h * 0.02);
   ctx.font = `700 ${(lh * 0.62).toFixed(0)}px sans-serif`;
   ctx.textBaseline = "middle";
+  const color = "#FBC105"; // cor única de marca para todas as regiões
   activeRegions().forEach((r) => {
-    const idx = regionIndex(r.id), color = regionColor(idx);
+    const idx = regionIndex(r.id);
     const x = r.x * w, y = r.y * h, rw = r.w * w, rh = r.h * h;
     ctx.globalAlpha = 0.14; ctx.fillStyle = color; ctx.fillRect(x, y, rw, rh); ctx.globalAlpha = 1;
     ctx.strokeStyle = color; ctx.lineWidth = Math.max(2, w * 0.0025); ctx.strokeRect(x, y, rw, rh);
@@ -765,8 +885,8 @@ function drawRegionsBoard(ctx, w, h) {
   });
 }
 
-function exportHeatmap() {
-  if (!canAnalyze()) { toast("Gere o heatmap (mapeie componentes e informe o total de usuários) antes de baixar.", "error"); return; }
+/* Compose the screen (or Figma attention board) + heatmap onto a canvas. */
+function buildHeatmapCanvas() {
   const figma = hasFigmaEmbed();
   const rect = overlay.getBoundingClientRect();
   let nw, nh;
@@ -779,7 +899,6 @@ function exportHeatmap() {
     nw = screenImg.naturalWidth || screenImg.width || Math.round(rect.width) || 1000;
     nh = screenImg.naturalHeight || screenImg.height || Math.round(nw * ratio);
   }
-
   // Cap the export so tall merged pages don't overflow the canvas size limit
   let ew = nw, eh = nh;
   const longest = Math.max(nw, nh);
@@ -794,22 +913,42 @@ function exportHeatmap() {
     renderHeatmap(ctx, ew, eh, { radiusMult: state.heat.radius, opacity: state.heat.opacity, progress: 1 });
   } catch (e) {
     toast("Não consegui compor a imagem: " + (e.message || e.name), "error", 4200);
-    return;
+    return null;
   }
+  return cv;
+}
+const heatFilename = () => `${(curScreen()?.name || "tela").replace(/\s+/g, "-").toLowerCase()}-heatmap.png`;
 
-  const filename = `${(curScreen().name || "tela").replace(/\s+/g, "-").toLowerCase()}-heatmap.png`;
+function exportHeatmap() {
+  if (!canAnalyze()) { toast("Gere o heatmap (mapeie componentes e informe o total de usuários) antes de baixar.", "error"); return; }
+  const cv = buildHeatmapCanvas(); if (!cv) return;
+  const filename = heatFilename();
   // Prefer a blob URL — large data: URLs silently fail to download in Chrome.
   const useDataURL = () => {
     try { openExportModal(cv.toDataURL("image/png"), filename, false); }
     catch (e) { toast(e.name === "SecurityError" ? "O navegador bloqueou a exportação (imagem protegida)." : "Não foi possível gerar o arquivo.", "error", 4200); }
   };
   try {
-    if (cv.toBlob) cv.toBlob((blob) => blob ? openExportModal(URL.createObjectURL(blob), filename, true) : useDataURL(), "image/png");
+    if (cv.toBlob) cv.toBlob((blob) => blob ? openExportModal(URL.createObjectURL(blob), filename, true, blob) : useDataURL(), "image/png");
     else useDataURL();
   } catch (e) {
     if (e.name === "SecurityError") toast("O navegador bloqueou a exportação (imagem protegida).", "error", 4200);
     else useDataURL();
   }
+}
+
+/* Copy the screen + heatmap straight to the clipboard (no modal). */
+function copyHeatmapImage() {
+  if (!canAnalyze()) { toast("Gere o heatmap (mapeie componentes e informe o total de usuários) antes de copiar.", "error"); return; }
+  const cv = buildHeatmapCanvas(); if (!cv) return;
+  const blobPromise = canvasBlob(cv);               // built now → write stays in the gesture
+  writeImageToClipboard(blobPromise).then((ok) => {
+    if (ok) { toast("Imagem copiada — cole no seu slide ou documento.", "success"); return; }
+    // Blocked here (e.g. sandboxed preview). Open the preview so the user can
+    // hit the modal's “Copiar imagem”, which copies via the legacy <img> path.
+    blobPromise.then((blob) => openExportModal(URL.createObjectURL(blob), heatFilename(), true, blob)).catch(() => {});
+    toast("Prévia aberta — clique em “Copiar imagem” ali (funciona no modo restrito).", "info", 6000);
+  });
 }
 
 /* ---- Expanded insight modal ------------------------------ */
@@ -860,7 +999,7 @@ let _insightItems = [];
 function openInsightModal(kind) {
   if (!canAnalyze()) { toast("Mapeie componentes e informe o total de usuários para expandir.", "info"); return; }
   const body = $("#insight-body");
-  const rows = ranking(activeRegions(), state.totalUsers, counts());
+  const rows = ranking(analysisRegions(), state.totalUsers, counts());
   $("#insight-title").textContent = kind === "concentration" ? "Concentração de atenção" : kind === "ranking" ? "Ranking & Pareto" : "Scroll × Relevância";
 
   let head = "", listHTML = "";
@@ -869,7 +1008,7 @@ function openInsightModal(kind) {
     `<div class="rankrow" data-rid="${rid}" style="--rc:${regionColor(idx)}"><span class="rankrow__idx">${idx + 1}</span><span class="rankrow__body"><span class="rankrow__name">${name}</span><span class="rankrow__track"><span class="rankrow__fill" style="width:${w}%"></span></span></span><span class="rankrow__val">${valTxt}</span></div>`;
 
   if (kind === "concentration") {
-    const g = concentration(activeRegions(), state.totalUsers, counts()), lvl = concentrationLevel(g);
+    const g = concentration(analysisRegions(), state.totalUsers, counts()), lvl = concentrationLevel(g);
     head = `<div class="big-metric"><span class="big-metric__val">${g.toFixed(2)}</span><span class="big-metric__level" style="color:var(--${lvl.tone}-pure)">${lvl.label}</span></div>
             <div class="conc__bar" style="height:12px"><div class="conc__fill" style="width:${(g * 100).toFixed(0)}%"></div></div>`;
     rows.forEach((r) => {
@@ -886,7 +1025,7 @@ function openInsightModal(kind) {
     });
   } else {
     head = `<div class="scrollchart">${scrollSVG(560, 280)}</div>`;
-    scrollModel(activeRegions(), state.totalUsers, counts()).forEach((p) => {
+    scrollModel(analysisRegions(), state.totalUsers, counts()).forEach((p) => {
       const idx = regionIndex(p.region.id);
       _insightItems.push({ rid: p.region.id, name: p.event, idx, verdict: verdictScroll(p) });
       listHTML += rowHTML(idx, `${p.event} · prof. ${Math.round(p.depth * 100)}%`, fmtPct(p.rel * (rows.max || 1)), clamp(p.rel, 0.02, 1) * 100, p.region.id);
@@ -919,7 +1058,7 @@ function closeInsightModal() { $("#insight-modal").hidden = true; }
 
 /* Scroll chart SVG at a given size (shared by the card and the modal) */
 function scrollSVG(W, H) {
-  const pts = scrollModel(activeRegions(), state.totalUsers, counts());
+  const pts = scrollModel(analysisRegions(), state.totalUsers, counts());
   const pl = 12, pr = 12, pt = 14, pb = 22, plotW = W - pl - pr, plotH = H - pt - pb;
   const X = (d) => pl + d * plotW, Y = (v) => pt + (1 - v) * plotH;
   let curve = "";
@@ -940,10 +1079,10 @@ function scrollSVG(W, H) {
      <text x="${W - pr}" y="${H - 5}" text-anchor="end" class="axis-label">rodapé</text></svg>`;
 }
 
-let exportURL = null, exportName = "heatmap.png", exportIsBlob = false;
-function openExportModal(url, filename, isBlob) {
+let exportURL = null, exportName = "heatmap.png", exportIsBlob = false, exportBlob = null;
+function openExportModal(url, filename, isBlob, blob) {
   if (exportURL && exportIsBlob) URL.revokeObjectURL(exportURL);
-  exportURL = url; exportName = filename; exportIsBlob = !!isBlob;
+  exportURL = url; exportName = filename; exportIsBlob = !!isBlob; exportBlob = blob || null;
   $("#export-img").src = url;
   const dl = $("#export-dl"); dl.href = url; dl.download = filename;
   $("#export-modal").hidden = false;
@@ -951,6 +1090,12 @@ function openExportModal(url, filename, isBlob) {
 function closeExportModal() {
   $("#export-modal").hidden = true;
   if (exportURL && exportIsBlob) { URL.revokeObjectURL(exportURL); exportURL = null; }
+  exportBlob = null;
+}
+function copyExportImage() {
+  // #export-img is already loaded → legacy copy works even in restricted iframes.
+  const blobPromise = exportBlob ? Promise.resolve(exportBlob) : fetch(exportURL).then((r) => r.blob());
+  copyImageEl($("#export-img"), blobPromise, "Cópia bloqueada aqui — clique com o botão direito na imagem acima → “Copiar imagem”.");
 }
 
 /* Independent show/hide of the region + heatmap layers */
@@ -1036,6 +1181,8 @@ function updateCounters() {
   $("#img-count").textContent = state.screens.length;
   $("#stat-mapped").textContent = activeRegions().length;
   $("#event-count").textContent = hasEvents() ? `${activeRegions().length}/${state.events.length}` : "—";
+  updateCompareAvailability();
+  if (wizardOpen()) wizardSync();
 }
 function refreshScrollDependent() { renderScroll(); renderConcentration(); renderRegionDetail(state.selectedId); if (state.show.heatmap) drawHeatmap(1); }
 function renderAll() {
@@ -1049,12 +1196,13 @@ function renderAll() {
 /* ============================================================
    Uploads
    ============================================================ */
-function addImages(files) {
+function addImages(files, opts = {}) {
   const imgs = [...files].filter((f) => f.type.startsWith("image/"));
   if (!imgs.length) { toast("Selecione um arquivo de imagem (PNG, JPG ou WebP).", "error"); return; }
-  Promise.all(imgs.map((f) => new Promise((res) => {
+  Promise.all(imgs.map((f, i) => new Promise((res) => {
     const fr = new FileReader();
-    fr.onload = () => res({ id: "u" + Date.now() + Math.random().toString(36).slice(2, 6), name: `Imagem ${state.screens.length + 1}`, file: f.name, imageURL: fr.result, baseUsers: state.suggestedTotal, regions: [] });
+    const fname = f.name || `${opts.namePrefix || "colado"}-${Date.now().toString(36)}${i ? "-" + i : ""}.png`;
+    fr.onload = () => res({ id: "u" + Date.now() + Math.random().toString(36).slice(2, 6), name: `Imagem ${state.screens.length + 1}`, file: fname, imageURL: fr.result, baseUsers: state.suggestedTotal, regions: [], sameAsPrev: null });
     fr.readAsDataURL(f);
   }))).then((created) => {
     const first = state.screens.length === 0;
@@ -1063,8 +1211,118 @@ function addImages(files) {
     if (first) state.screenIndex = 0;
     closeAddModal();
     renderAll();
-    toast(`${created.length} imagem(ns) adicionada(s).`, "success");
+    if (wizardOpen()) wizardSync();
+    toast(opts.toast || `${created.length} imagem(ns) adicionada(s).`, "success");
   });
+}
+
+/* Paste an image straight from the clipboard — no file dialog. */
+function handlePaste(e) {
+  if (state.mode !== "analysis") return;
+  const t = e.target;
+  if (t && (t.matches?.("input, textarea, select") || t.isContentEditable)) return;
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  const files = [];
+  for (const it of items) if (it.type && it.type.startsWith("image/")) { const f = it.getAsFile(); if (f) files.push(f); }
+  if (!files.length) return;
+  e.preventDefault();
+  addImages(files, { namePrefix: "colado", toast: `${files.length} imagem(ns) colada(s) da área de transferência.` });
+}
+
+/* Read an image from the clipboard via the async API (button-triggered). */
+async function pasteImageButton() {
+  if (!navigator.clipboard?.read) { toast("Seu navegador não permite ler a área de transferência aqui. Use Ctrl/⌘+V.", "info", 4200); return; }
+  try {
+    const items = await navigator.clipboard.read();
+    const files = [];
+    for (const it of items) {
+      const type = it.types.find((t) => t.startsWith("image/"));
+      if (type) { const blob = await it.getType(type); files.push(new File([blob], "colado.png", { type })); }
+    }
+    if (!files.length) { toast("Não há imagem na área de transferência. Copie um print primeiro.", "info", 4200); return; }
+    addImages(files, { namePrefix: "colado", toast: `${files.length} imagem(ns) colada(s).` });
+  } catch {
+    toast("Não consegui ler a área de transferência. Tente Ctrl/⌘+V direto na tela.", "info", 4200);
+  }
+}
+
+/* A Promise<Blob> from a canvas (created synchronously so the clipboard
+   write can stay inside the user gesture). */
+function canvasBlob(cv) {
+  return new Promise((res, rej) => {
+    if (!cv) return rej(new Error("sem imagem"));
+    try {
+      if (cv.toBlob) cv.toBlob((b) => (b ? res(b) : rej(new Error("toBlob vazio"))), "image/png");
+      else { const u = cv.toDataURL("image/png"); fetch(u).then((r) => r.blob()).then(res, rej); }
+    } catch (e) { rej(e); }
+  });
+}
+
+/* Async Clipboard API write (image/png). Silent — returns true/false.
+   MUST be called synchronously from a click handler: navigator.clipboard.write
+   is invoked in the same tick with a Promise<Blob>, preserving the transient
+   user activation (the reason copy "silently failed" before). */
+function writeImageToClipboard(blobPromise) {
+  if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") return Promise.resolve(false);
+  let item;
+  try { item = new ClipboardItem({ "image/png": blobPromise }); }
+  catch { item = null; } // browser doesn't accept a Promise entry
+  const attempt = item ? navigator.clipboard.write([item]) : Promise.reject(new Error("no-promise-item"));
+  return attempt.then(
+    () => true,
+    async () => {
+      try { await navigator.clipboard.write([new ClipboardItem({ "image/png": await blobPromise })]); return true; }
+      catch { return false; }
+    }
+  );
+}
+
+/* Legacy copy: select a loaded <img> and execCommand('copy'). Produces a
+   text/html clipboard entry with the image, which pastes AS AN IMAGE in
+   Slides/Docs/PowerPoint/Figma and — crucially — works inside sandboxed
+   iframes where the async image Clipboard API is blocked. Synchronous, so it
+   keeps the user gesture. Returns true if the command ran. */
+function legacyCopyImgEl(imgEl) {
+  if (!imgEl || !imgEl.complete || !imgEl.naturalWidth) return false;
+  try {
+    const sel = getSelection(), range = document.createRange();
+    range.selectNode(imgEl); sel.removeAllRanges(); sel.addRange(range);
+    const ok = document.execCommand("copy"); sel.removeAllRanges();
+    return ok;
+  } catch { return false; }
+}
+
+/* Orchestrate an image copy from a loaded <img>: legacy first (works in
+   restricted iframes), then upgrade to image/png where the browser allows it. */
+function copyImageEl(imgEl, pngBlobPromise, hint) {
+  const legacyOk = legacyCopyImgEl(imgEl); // synchronous, in-gesture
+  // Best-effort upgrade to a real image/png (silent; overwrites the html entry
+  // where permitted; harmless where blocked).
+  const upgrade = pngBlobPromise ? writeImageToClipboard(pngBlobPromise) : Promise.resolve(false);
+  if (legacyOk) { toast("Imagem copiada — cole no seu slide ou documento.", "success"); return; }
+  upgrade.then((ok) => {
+    if (ok) toast("Imagem copiada — cole no seu slide ou documento.", "success");
+    else toast(hint || "Cópia bloqueada aqui — clique com o botão direito na imagem → “Copiar imagem”.", "info", 6000);
+  });
+}
+
+/* Copy plain text with an execCommand fallback for locked-down contexts. */
+async function copyText(text, okMsg) {
+  try {
+    if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(text); toast(okMsg, "success"); return true; }
+    throw new Error("no-async");
+  } catch {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0"; ta.style.top = "0";
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      const ok = document.execCommand("copy"); ta.remove();
+      if (ok) { toast(okMsg, "success"); return true; }
+    } catch {}
+    toast("Não consegui copiar o texto automaticamente.", "error");
+    return false;
+  }
 }
 
 async function loadSpreadsheet(file) {
@@ -1727,6 +1985,292 @@ async function loadFunnelSpreadsheet(file) {
 }
 
 /* ============================================================
+   Compare screens
+   ============================================================ */
+const compareUsers = {}; // per-screen denominator overrides (this session)
+let compareSel = { a: null, b: null };
+
+function updateCompareAvailability() {
+  const cmp = $("#btn-compare"); if (cmp) cmp.disabled = state.screens.length < 2;
+  const exp = $("#btn-export-analysis"); if (exp) exp.disabled = !canAnalyze();
+}
+
+function screenDenom(s) {
+  return compareUsers[s.id] || s.baseUsers || state.totalUsers || 0;
+}
+function screenMetrics(s) {
+  const c = counts(), regs = s.regions || [], denom = screenDenom(s);
+  const rk = ranking(regs, denom, c);
+  const clicks = regs.reduce((t, r) => t + countOf(r.event, c), 0);
+  return {
+    denom, mapped: regs.length, clicks,
+    conc: concentration(regs, denom, c),
+    avgRel: rk.length ? rk.reduce((t, r) => t + r.relevance, 0) / rk.length : 0,
+    top: rk[0] || null, ranking: rk,
+  };
+}
+
+function openCompareModal() {
+  if (state.screens.length < 2) { toast("Adicione ao menos duas telas para comparar.", "info"); return; }
+  const cur = curScreen();
+  // default B: a same-page sibling if any, else the neighbour
+  const info = cur ? groupInfo(cur.id) : null;
+  let b = null;
+  if (info && info.multi) { const sib = info.group.items.find((x) => x.screen.id !== cur.id); if (sib) b = sib.screen.id; }
+  if (!b) { const i = state.screenIndex; b = state.screens[i + 1]?.id || state.screens[i - 1]?.id || state.screens.find((s) => s.id !== cur?.id)?.id; }
+  compareSel = { a: cur?.id || state.screens[0].id, b };
+  renderCompare();
+  $("#compare-modal").hidden = false;
+}
+function closeCompareModal() { $("#compare-modal").hidden = true; }
+
+function compareOptionsHTML(selId) {
+  return state.screens.map((s, i) => `<option value="${s.id}"${s.id === selId ? " selected" : ""}>${i + 1}. ${s.name}</option>`).join("");
+}
+const cmpDelta = (a, b, dp = 0, pct = false) => {
+  const d = b - a;
+  if (Math.abs(d) < (pct ? 0.0005 : 0.5)) return `<span class="cmp-delta cmp-delta--flat">—</span>`;
+  const up = d > 0;
+  const val = pct ? (Math.abs(d) * 100).toFixed(1).replace(".", ",") + "%" : fmtInt(Math.abs(d));
+  return `<span class="cmp-delta ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${val}</span>`;
+};
+
+function renderCompare() {
+  const body = $("#compare-body");
+  const A = state.screens.find((s) => s.id === compareSel.a) || state.screens[0];
+  const B = state.screens.find((s) => s.id === compareSel.b) || state.screens.find((s) => s.id !== A.id);
+  if (!A || !B) { body.innerHTML = `<p class="card__empty">Selecione duas telas.</p>`; return; }
+  const mA = screenMetrics(A), mB = screenMetrics(B);
+  const gA = groupInfo(A.id), gB = groupInfo(B.id);
+  const sameGroup = gA && gB && gA.multi && gB.group === gA.group;
+  const c = counts();
+  // shared components (events mapped in both)
+  const setB = new Set((B.regions || []).map((r) => r.event));
+  const shared = (A.regions || []).map((r) => r.event).filter((e) => setB.has(e));
+  const uniq = [...new Set(shared)];
+
+  const metricRow = (label, a, b, fmt, pct) =>
+    `<div class="cmp-row"><span class="cmp-row__k">${label}</span>
+       <span class="cmp-row__a">${fmt(a)}</span>
+       <span class="cmp-row__d">${cmpDelta(a, b, 0, pct)}</span>
+       <span class="cmp-row__b">${fmt(b)}</span></div>`;
+
+  const sharedRows = uniq.length ? uniq.map((ev) => {
+    const clicks = countOf(ev, c);
+    const relA = mA.denom ? clicks / mA.denom : 0, relB = mB.denom ? clicks / mB.denom : 0;
+    return `<div class="cmp-row cmp-row--ev">
+       <span class="cmp-row__k">${ev}</span>
+       <span class="cmp-row__a">${fmtPct(relA)}</span>
+       <span class="cmp-row__d">${cmpDelta(relA, relB, 0, true)}</span>
+       <span class="cmp-row__b">${fmtPct(relB)}</span></div>`;
+  }).join("") : `<p class="card__empty" style="padding:12px">Nenhum componente em comum mapeado nas duas telas. Compare as métricas gerais acima.</p>`;
+
+  body.innerHTML =
+    `<div class="cmp-pickers">
+       <select class="select cmp-pick" data-side="a">${compareOptionsHTML(A.id)}</select>
+       <span class="cmp-vs">vs</span>
+       <select class="select cmp-pick" data-side="b">${compareOptionsHTML(B.id)}</select>
+     </div>
+     ${sameGroup ? `<div class="cmp-samepage"><span class="grouptag" style="--gc:${regionColor(gA.colorIdx)}"><span class="grouptag__dot"></span>Mesma página · Pág. ${gA.group.letter}</span> comparando ${(GROUP_KIND[gA.group.kind] || GROUP_KIND.mixed).verb}</div>` : ""}
+     <div class="cmp-thumbs">
+       <div class="cmp-thumb"><img src="${A.imageURL}" alt="" /><span>${A.name}</span></div>
+       <div class="cmp-thumb"><img src="${B.imageURL}" alt="" /><span>${B.name}</span></div>
+     </div>
+     <div class="cmp-denoms">
+       <label class="cmp-denom">Usuários da tela A<input class="input" inputmode="numeric" data-denom="a" value="${mA.denom ? fmtInt(mA.denom) : ""}" placeholder="total"/></label>
+       <label class="cmp-denom">Usuários da tela B<input class="input" inputmode="numeric" data-denom="b" value="${mB.denom ? fmtInt(mB.denom) : ""}" placeholder="total"/></label>
+     </div>
+     <div class="cmp-table">
+       <div class="cmp-head"><span>Métrica</span><span>${A.name}</span><span>Δ</span><span>${B.name}</span></div>
+       ${metricRow("Componentes mapeados", mA.mapped, mB.mapped, fmtInt)}
+       ${metricRow("Cliques capturados", mA.clicks, mB.clicks, fmtInt)}
+       ${metricRow("Relevância média", mA.avgRel, mB.avgRel, fmtPct, true)}
+       ${metricRow("Concentração (0–1)", mA.conc, mB.conc, (v) => v.toFixed(2).replace(".", ","), true)}
+       <div class="cmp-row"><span class="cmp-row__k">Top componente</span>
+         <span class="cmp-row__a">${mA.top ? mA.top.event : "—"}</span><span class="cmp-row__d"></span>
+         <span class="cmp-row__b">${mB.top ? mB.top.event : "—"}</span></div>
+     </div>
+     <div class="cmp-section-title">Relevância por componente em comum</div>
+     <div class="cmp-table">${sharedRows}</div>`;
+
+  body.querySelectorAll(".cmp-pick").forEach((sel) => sel.addEventListener("change", () => {
+    compareSel[sel.dataset.side] = sel.value;
+    if (compareSel.a === compareSel.b) toast("Escolha duas telas diferentes.", "info");
+    renderCompare();
+  }));
+  body.querySelectorAll("[data-denom]").forEach((inp) => {
+    const s = inp.dataset.denom === "a" ? A : B;
+    inp.addEventListener("input", () => { compareUsers[s.id] = parseInt(inp.value.replace(/\D/g, ""), 10) || 0; });
+    inp.addEventListener("change", () => renderCompare());
+  });
+}
+
+/* ============================================================
+   Export / copy analysis blocks (for slides & one-pagers)
+   ============================================================ */
+let analysisCanvas = null;
+
+function buildAnalysisText() {
+  const s = curScreen(); if (!s) return "";
+  const c = counts();
+  const g = concentration(analysisRegions(), state.totalUsers, c);
+  const lvl = concentrationLevel(g);
+  const rk = ranking(analysisRegions(), state.totalUsers, c);
+  const pts = scrollModel(analysisRegions(), state.totalUsers, c);
+  const L = [];
+  L.push(`UX Analytics — ${s.name}`);
+  L.push(`Total de usuários: ${fmtInt(state.totalUsers)} · componentes mapeados: ${analysisRegions().length}`);
+  L.push("");
+  L.push(`Concentração de atenção: ${g.toFixed(2).replace(".", ",")} (${lvl.label})`);
+  L.push("");
+  L.push("Ranking por relevância (cliques ÷ usuários):");
+  rk.forEach((r, i) => L.push(`  ${i + 1}. ${r.event} — ${fmtPct(r.relevance)}${i === rk.cutIndex ? "  ← corte 80%" : ""}`));
+  const anomalies = pts.filter((p) => p.anomaly);
+  if (anomalies.length) {
+    L.push("");
+    L.push("Anomalias de scroll:");
+    anomalies.forEach((p) => L.push(`  • ${p.event} — ${p.positive ? "acima do esperado (oportunidade)" : "abaixo do esperado (atenção)"}`));
+  }
+  L.push("");
+  L.push("Gerado com UX Analytics");
+  return L.join("\n");
+}
+
+/* Draw a branded summary card to a canvas (copy/download for slides). */
+function renderAnalysisCanvas() {
+  const s = curScreen(); if (!s) return null;
+  const c = counts();
+  const g = concentration(analysisRegions(), state.totalUsers, c);
+  const lvl = concentrationLevel(g);
+  const rk = ranking(analysisRegions(), state.totalUsers, c);
+  const dark = document.documentElement.dataset.theme !== "light";
+  const scale = 2, W = 720, rows = Math.min(rk.length, 8);
+  const H = 250 + rows * 34 + 40;
+  const cv = document.createElement("canvas");
+  cv.width = W * scale; cv.height = H * scale;
+  const x = cv.getContext("2d"); x.scale(scale, scale);
+  const bg = dark ? "#1a1a1a" : "#ffffff", card = dark ? "#222222" : "#f4f4f4";
+  const ink = dark ? "#f5f5f5" : "#141414", sub = dark ? "#a5a5a5" : "#6a6a6a";
+  const brand = "#FBC105", line = dark ? "rgba(255,255,255,.1)" : "rgba(0,0,0,.1)";
+  x.fillStyle = bg; x.fillRect(0, 0, W, H);
+  // header
+  x.fillStyle = brand; roundRect(x, 28, 26, 34, 34, 8); x.fill();
+  x.fillStyle = "#121212"; x.font = "800 15px monospace"; x.textBaseline = "middle"; x.textAlign = "center";
+  x.fillText("UX", 45, 44);
+  x.textAlign = "left"; x.fillStyle = ink; x.font = "700 20px sans-serif";
+  x.fillText(s.name, 74, 38);
+  x.fillStyle = sub; x.font = "500 13px sans-serif";
+  x.fillText(`${fmtInt(state.totalUsers)} usuários · ${analysisRegions().length} componentes mapeados`, 74, 56);
+  // concentration tile
+  let y = 90;
+  x.fillStyle = card; roundRect(x, 28, y, W - 56, 68, 12); x.fill();
+  x.fillStyle = sub; x.font = "600 12px sans-serif"; x.fillText("CONCENTRAÇÃO DE ATENÇÃO", 46, y + 20);
+  x.fillStyle = ink; x.font = "800 30px monospace"; x.fillText(g.toFixed(2).replace(".", ","), 46, y + 46);
+  const tone = lvl.tone === "error" ? "#F45B5B" : lvl.tone === "alert" ? brand : "#3Fb079";
+  x.fillStyle = tone; x.font = "700 14px sans-serif"; x.textAlign = "right"; x.fillText(lvl.label, W - 46, y + 34); x.textAlign = "left";
+  // ranking
+  y += 92;
+  x.fillStyle = sub; x.font = "600 12px sans-serif"; x.fillText("RANKING POR RELEVÂNCIA (CLIQUES ÷ USUÁRIOS)", 28, y);
+  y += 22;
+  const max = rk.max || 1, barX = 250, barW = W - barX - 90;
+  rk.slice(0, rows).forEach((r, i) => {
+    x.fillStyle = i === rk.cutIndex ? brand : sub; x.font = "700 13px monospace"; x.fillText(String(i + 1), 30, y + 10);
+    x.fillStyle = ink; x.font = "600 13px sans-serif";
+    x.fillText(truncateText(x, r.event, 190), 48, y + 10);
+    x.fillStyle = line; roundRect(x, barX, y + 3, barW, 12, 6); x.fill();
+    x.fillStyle = brand; const w = Math.max(6, (r.relevance / max) * barW); roundRect(x, barX, y + 3, w, 12, 6); x.fill();
+    x.fillStyle = ink; x.font = "700 12px monospace"; x.textAlign = "right"; x.fillText(fmtPct(r.relevance), W - 30, y + 10); x.textAlign = "left";
+    if (i === rk.cutIndex && rk.cutIndex > 0) { x.strokeStyle = brand; x.setLineDash([3, 3]); x.beginPath(); x.moveTo(barX, y + 24); x.lineTo(W - 30, y + 24); x.stroke(); x.setLineDash([]); }
+    y += 34;
+  });
+  // footer
+  x.fillStyle = sub; x.font = "500 11px sans-serif"; x.fillText("Gerado com UX Analytics", 28, H - 20);
+  return cv;
+}
+function roundRect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function truncateText(ctx, t, maxW) { if (ctx.measureText(t).width <= maxW) return t; let s = t; while (s.length > 1 && ctx.measureText(s + "…").width > maxW) s = s.slice(0, -1); return s + "…"; }
+
+function openAnalysisModal() {
+  if (!canAnalyze()) { toast("Mapeie componentes e informe o total de usuários para exportar a análise.", "error"); return; }
+  analysisCanvas = renderAnalysisCanvas();
+  const host = $("#analysis-preview"); host.innerHTML = "";
+  // Render an <img> (not the raw canvas) so the legacy copy path can select it.
+  if (analysisCanvas) {
+    const img = el("img"); img.id = "analysis-img"; img.alt = "Prévia da análise";
+    img.style.cssText = "max-width:100%;height:auto;border-radius:10px;display:block";
+    img.src = analysisCanvas.toDataURL("image/png");
+    host.appendChild(img);
+  }
+  $("#analysis-modal").hidden = false;
+}
+function closeAnalysisModal() { $("#analysis-modal").hidden = true; }
+function copyAnalysisImage() {
+  copyImageEl($("#analysis-img"), canvasBlob(analysisCanvas || renderAnalysisCanvas()),
+    "Cópia bloqueada aqui — clique com o botão direito na prévia acima → “Copiar imagem”.");
+}
+async function downloadAnalysisImage() {
+  const cv = analysisCanvas || renderAnalysisCanvas(); if (!cv) return;
+  let b; try { b = await canvasBlob(cv); } catch { return; }
+  triggerDownload(URL.createObjectURL(b), `analise-${(curScreen()?.name || "tela").replace(/\s+/g, "-").toLowerCase()}.png`, true);
+  toast("Baixando…", "success", 1500);
+}
+function copyAnalysisText() { copyText(buildAnalysisText(), "Texto copiado — cole no seu documento."); }
+function exportAnalysisPDF() {
+  const cv = analysisCanvas || renderAnalysisCanvas();
+  if (!cv) { toast("Nada para exportar.", "error"); return; }
+  let holder = $(".analysis-print");
+  if (!holder) { holder = el("div", "analysis-print"); document.body.appendChild(holder); }
+  holder.innerHTML = `<img src="${cv.toDataURL("image/png")}" style="width:100%;max-width:760px;display:block;margin:0 auto" alt="Análise" />`;
+  document.body.classList.add("printing-analysis");
+  const cleanup = () => { document.body.classList.remove("printing-analysis"); removeEventListener("afterprint", cleanup); };
+  addEventListener("afterprint", cleanup);
+  toast("Abrindo impressão — escolha “Salvar como PDF”.", "info", 3200);
+  setTimeout(() => window.print(), 80);
+}
+
+/* ============================================================
+   Onboarding wizard (3 steps — not a coachmark)
+   ============================================================ */
+let wizardStep = 1;
+function wizardOpen() { return !$("#wizard") ? false : !$("#wizard").hidden; }
+function openWizard(step) { wizardStep = step || 1; $("#wizard").hidden = false; wizardSync(); }
+function closeWizard() { $("#wizard").hidden = true; try { localStorage.setItem("uxa-wizard-seen", "1"); } catch {} }
+function wizardGoto(step) { wizardStep = clamp(step, 1, 3); wizardSync(); }
+
+function wizardSync() {
+  const w = $("#wizard"); if (!w || w.hidden) return;
+  const hasImg = state.screens.length > 0;
+  const hasData = hasEvents();
+  // step availability
+  $$("#wizard .wiz-step").forEach((n) => n.classList.toggle("is-active", +n.dataset.step === wizardStep));
+  $$("#wizard .wiz-dot").forEach((n) => {
+    const st = +n.dataset.step;
+    n.classList.toggle("is-active", st === wizardStep);
+    n.classList.toggle("is-done", (st === 1 && hasImg) || (st === 2 && hasData) || (st === 3 && hasData && hasImg && activeRegions().length >= 0 && wizardStep > 3));
+  });
+  // step 1 status
+  $("#wiz-img-count").textContent = hasImg ? `${state.screens.length} imagem(ns) adicionada(s)` : "Nenhuma imagem ainda";
+  $("#wiz-1-next").disabled = !hasImg;
+  // step 2 status
+  $("#wiz-data-status").textContent = hasData ? `${state.events.length} eventos carregados de ${state.fileName || "planilha"}` : "Nenhuma planilha ainda";
+  $("#wiz-2-next").disabled = !hasData;
+  // step 3 column mapping
+  const cols = $("#wiz-columns");
+  if (!state.headers.length) {
+    cols.innerHTML = `<p class="card__empty">Anexe a planilha no passo 2 para mapear as colunas.</p>`;
+  } else {
+    const opts = (sel, allowNone) =>
+      (allowNone ? `<option value="-1"${sel === -1 ? " selected" : ""}>—</option>` : "") +
+      state.headers.map((h, i) => `<option value="${i}"${sel === i ? " selected" : ""}>${h || "coluna " + (i + 1)}</option>`).join("");
+    cols.innerHTML =
+      `<div class="field"><label class="field__label">Evento <span class="req">*</span></label><select class="select" data-wcol="name">${opts(state.columns.name, false)}</select></div>
+       <div class="field"><label class="field__label">Contagem (event_count) <span class="req">*</span></label><select class="select" data-wcol="count">${opts(state.columns.count, false)}</select></div>
+       <div class="field"><label class="field__label">Total de usuários</label><select class="select" data-wcol="total">${opts(state.columns.total, true)}</select></div>`;
+    cols.querySelectorAll("select[data-wcol]").forEach((sl) => sl.addEventListener("change", () => { state.columns[sl.dataset.wcol] = parseInt(sl.value, 10); reDeriveEvents(); wizardSync(); }));
+  }
+}
+
+/* ============================================================
    Controls
    ============================================================ */
 function initControls() {
@@ -1812,6 +2356,7 @@ function initControls() {
     if (state.show.heatmap) drawHeatmap(1);
   });
   $("#btn-download-heat").addEventListener("click", exportHeatmap);
+  $("#btn-copy-heat").addEventListener("click", copyHeatmapImage);
 
   // Expand insight cards → modal
   $$(".card__expand[data-expand]").forEach((b) => b.addEventListener("click", () => openInsightModal(b.dataset.expand)));
@@ -1855,6 +2400,37 @@ function initControls() {
   ["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("is-drag"); }));
   dz.addEventListener("drop", (e) => { if (e.dataTransfer.files.length) addImages(e.dataTransfer.files); });
 
+  // Paste image from clipboard
+  document.addEventListener("paste", handlePaste);
+  $("#btn-paste").addEventListener("click", pasteImageButton);
+  $("#empty-paste").addEventListener("click", pasteImageButton);
+  $("#export-copy").addEventListener("click", copyExportImage);
+
+  // Compare screens
+  $("#btn-compare").addEventListener("click", openCompareModal);
+  $("#compare-close").addEventListener("click", closeCompareModal);
+
+  // Export analysis blocks
+  $("#btn-export-analysis").addEventListener("click", openAnalysisModal);
+  $("#analysis-close").addEventListener("click", closeAnalysisModal);
+  $("#analysis-copy-img").addEventListener("click", copyAnalysisImage);
+  $("#analysis-copy-txt").addEventListener("click", copyAnalysisText);
+  $("#analysis-download-img").addEventListener("click", downloadAnalysisImage);
+  $("#analysis-pdf").addEventListener("click", exportAnalysisPDF);
+
+  // Onboarding wizard
+  $("#btn-guide").addEventListener("click", () => openWizard(1));
+  $("#wizard-close").addEventListener("click", closeWizard);
+  $("#wiz-skip").addEventListener("click", closeWizard);
+  $("#wiz-add-image").addEventListener("click", () => $("#fileinput").click());
+  $("#wiz-paste").addEventListener("click", pasteImageButton);
+  $("#wiz-add-data").addEventListener("click", () => $("#excelinput").click());
+  $("#wiz-1-next").addEventListener("click", () => wizardGoto(2));
+  $("#wiz-2-back").addEventListener("click", () => wizardGoto(1));
+  $("#wiz-2-next").addEventListener("click", () => wizardGoto(3));
+  $("#wiz-3-back").addEventListener("click", () => wizardGoto(2));
+  $("#wiz-done").addEventListener("click", closeWizard);
+
   // Canvas empty state
   $("#empty-add-image").addEventListener("click", () => fi.click());
   $("#empty-example").addEventListener("click", loadExample);
@@ -1892,5 +2468,10 @@ function initReveal() {
 /* ============================================================
    Boot
    ============================================================ */
-function boot() { renderAll(); initControls(); initReveal(); }
+function boot() {
+  renderAll(); initControls(); initReveal();
+  // First-time guided wizard (skippable, remembered)
+  let seen = false; try { seen = localStorage.getItem("uxa-wizard-seen") === "1"; } catch {}
+  if (!seen && !state.screens.length && !hasEvents()) openWizard(1);
+}
 boot();

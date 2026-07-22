@@ -38,6 +38,9 @@
       <div class="topbar__spacer"></div>
       <span class="pill pill--muted" id="pill-images"><span class="mono" id="stat-images">0</span>&nbsp;imagens</span>
       <span class="pill pill--brand" id="pill-mapped"><span class="mono" id="stat-mapped">0</span>&nbsp;posicionados</span>
+      <button class="icon-btn" id="btn-guide" title="Guia de uso" aria-label="Guia de uso">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.7M12 17h.01"/></svg>
+      </button>
       <button class="icon-btn" id="theme-toggle" title="Alternar tema" aria-label="Alternar tema">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>
@@ -66,8 +69,12 @@
               </svg>
             </div>
             <span class="dropzone__title">Adicionar imagem</span>
-            <span class="dropzone__hint">PNG, JPG, WebP · arraste ou clique</span>
+            <span class="dropzone__hint">PNG, JPG, WebP · arraste, clique ou cole (Ctrl/⌘+V)</span>
           </label>
+          <button class="btn btn--outline btn--block btn--sm" id="btn-paste">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>
+            Colar imagem da área de transferência
+          </button>
           <button class="btn btn--outline btn--block btn--sm" id="btn-figma">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M12 3v6m0 0a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg>
             Conectar protótipo Figma
@@ -138,6 +145,10 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                 Adicionar imagem
               </button>
+              <button class="btn btn--outline" id="empty-paste">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>
+                Colar imagem
+              </button>
               <button class="btn btn--outline" id="empty-figma">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M12 3v6m0 0a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"/></svg>
                 Conectar Figma
@@ -196,6 +207,20 @@
 
       <!-- ---------- RIGHT PANEL ---------- -->
       <aside class="panel panel--right" id="rightpanel">
+        <div class="rp-actions">
+          <button class="btn btn--outline btn--sm" id="btn-compare" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h7M3 12h7M3 18h7M17 4v16M14 7l3-3 3 3M20 17l-3 3-3-3"/></svg>
+            Comparar telas
+          </button>
+          <button class="btn btn--outline btn--sm" id="btn-export-analysis" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"/><path d="M9 13h6M9 17h4M9 9h2"/></svg>
+            Exportar análise
+          </button>
+        </div>
+        <div class="joint-banner" id="joint-banner" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M3 16v3a2 2 0 0 0 2 2h3M9 12h6"/></svg>
+          <span id="joint-banner-txt"></span>
+        </div>
         <div class="layers" id="layers">
           <span class="eyebrow">Camadas</span>
           <button class="layer-toggle is-on" data-layer="regions" aria-pressed="true">
@@ -238,7 +263,11 @@
           </div>
           <button class="btn btn--outline btn--block btn--sm" id="btn-download-heat">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg>
-            Baixar imagem com heatmap
+            Baixar imagem
+          </button>
+          <button class="btn btn--outline btn--block btn--sm" id="btn-copy-heat">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>
+            Copiar imagem
           </button>
         </div>
 
@@ -429,6 +458,80 @@
     </div>
   </div>
 
+  <!-- Onboarding wizard (guided, not a coachmark) -->
+  <div class="modal-backdrop wizard" id="wizard" hidden>
+    <div class="wiz" role="dialog" aria-modal="true" aria-label="Guia de uso">
+      <button class="modal__close wiz__close" id="wizard-close" aria-label="Fechar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+      <div class="wiz__steps">
+        <span class="wiz-dot" data-step="1"><b>1</b>Imagens</span>
+        <span class="wiz-sep"></span>
+        <span class="wiz-dot" data-step="2"><b>2</b>Planilha</span>
+        <span class="wiz-sep"></span>
+        <span class="wiz-dot" data-step="3"><b>3</b>Colunas</span>
+      </div>
+
+      <!-- Step 1 -->
+      <div class="wiz-step" data-step="1">
+        <div class="wiz-step__ico">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="1.8"/><path d="m4 17 5-5 4 4 3-3 4 4"/></svg>
+        </div>
+        <h2 class="wiz-step__title">Adicione as imagens do fluxo</h2>
+        <p class="wiz-step__text">Suba os prints das telas que você quer analisar — na ordem do fluxo. Você pode arrastar, escolher arquivos ou <b>colar (Ctrl/⌘+V)</b> direto.</p>
+        <div class="wiz-step__actions">
+          <button class="btn btn--brand" id="wiz-add-image">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            Adicionar imagens
+          </button>
+          <button class="btn btn--outline" id="wiz-paste">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>
+            Colar imagem
+          </button>
+        </div>
+        <div class="wiz-status" id="wiz-img-count">Nenhuma imagem ainda</div>
+        <div class="wiz-nav">
+          <button class="btn btn--ghost btn--sm" id="wiz-skip">Pular guia</button>
+          <button class="btn btn--brand btn--sm" id="wiz-1-next">Próximo →</button>
+        </div>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="wiz-step" data-step="2">
+        <div class="wiz-step__ico">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z"/><path d="M8 13h8M8 17h5"/></svg>
+        </div>
+        <h2 class="wiz-step__title">Faça upload da planilha</h2>
+        <p class="wiz-step__text">Anexe o export do GA/Looker (<b>.xlsx</b> ou <b>.csv</b>). Cada linha é um evento com contagem de cliques e, opcionalmente, total de usuários.</p>
+        <div class="wiz-step__actions">
+          <button class="btn btn--brand" id="wiz-add-data">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0L7 9m5-5 5 5"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg>
+            Anexar planilha
+          </button>
+        </div>
+        <div class="wiz-status" id="wiz-data-status">Nenhuma planilha ainda</div>
+        <div class="wiz-nav">
+          <button class="btn btn--ghost btn--sm" id="wiz-2-back">← Voltar</button>
+          <button class="btn btn--brand btn--sm" id="wiz-2-next">Próximo →</button>
+        </div>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="wiz-step" data-step="3">
+        <div class="wiz-step__ico">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/><circle cx="7" cy="6" r="1.6" fill="currentColor"/><circle cx="14" cy="12" r="1.6" fill="currentColor"/><circle cx="10" cy="18" r="1.6" fill="currentColor"/></svg>
+        </div>
+        <h2 class="wiz-step__title">Associe as colunas aos campos</h2>
+        <p class="wiz-step__text">Confirme qual coluna é o <b>evento</b>, a <b>contagem</b> e o <b>total de usuários</b>. A ferramenta detecta automaticamente, mas você pode ajustar.</p>
+        <div class="wiz-columns" id="wiz-columns"><!-- rendered by JS --></div>
+        <div class="wiz-nav">
+          <button class="btn btn--ghost btn--sm" id="wiz-3-back">← Voltar</button>
+          <button class="btn btn--brand btn--sm" id="wiz-done">Concluir ✓</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="toaststack" id="toaststack"></div>
 
   <!-- Export preview modal (works even where programmatic download is blocked) -->
@@ -443,6 +546,10 @@
       <div class="modal__imgwrap"><img id="export-img" alt="Prévia da imagem com heatmap" /></div>
       <div class="modal__foot">
         <span class="modal__hint">Se o download não iniciar, clique com o botão direito na imagem → “Salvar imagem como”.</span>
+        <button class="btn btn--outline btn--sm" id="export-copy">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>
+          Copiar imagem
+        </button>
         <a class="btn btn--brand btn--sm" id="export-dl" download>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg>
           Baixar PNG
@@ -461,6 +568,53 @@
         </button>
       </div>
       <div class="modal__body" id="insight-body"></div>
+    </div>
+  </div>
+
+  <!-- Compare screens modal -->
+  <div class="modal-backdrop" id="compare-modal" hidden>
+    <div class="modal modal--wide" role="dialog" aria-modal="true" aria-label="Comparar telas">
+      <div class="modal__head">
+        <span class="modal__title">Comparar telas</span>
+        <button class="modal__close" id="compare-close" aria-label="Fechar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body" id="compare-body"><!-- rendered by JS --></div>
+    </div>
+  </div>
+
+  <!-- Export analysis modal (PDF / copy blocks) -->
+  <div class="modal-backdrop" id="analysis-modal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Exportar análise">
+      <div class="modal__head">
+        <span class="modal__title">Exportar análise</span>
+        <button class="modal__close" id="analysis-close" aria-label="Fechar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <p class="insight-sub">Leve os blocos de análise para seus slides ou one-pagers. A imagem cola direto na apresentação; o texto, no seu documento.</p>
+        <div class="analysis-card" id="analysis-preview"><!-- canvas injected by JS --></div>
+        <div class="analysis-actions">
+          <button class="btn btn--brand btn--sm" id="analysis-copy-img">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>
+            Copiar imagem
+          </button>
+          <button class="btn btn--outline btn--sm" id="analysis-copy-txt">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h11M8 12h11M8 18h11M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>
+            Copiar texto
+          </button>
+          <button class="btn btn--outline btn--sm" id="analysis-download-img">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg>
+            Baixar PNG
+          </button>
+          <button class="btn btn--outline btn--sm" id="analysis-pdf">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z"/><path d="M9 13h1.5a1.5 1.5 0 0 1 0 3H9v-3Zm0 0v5"/></svg>
+            Exportar PDF
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 

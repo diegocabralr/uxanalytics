@@ -40,6 +40,13 @@ do arquivo — cada retângulo é ligado a um evento real da planilha.
 | **Heatmap térmico** | Mapa de calor convencional (azul→ciano→verde→amarelo→vermelho) ponderado pela relevância, com controles de **range (raio)** e **opacidade** e **download da imagem** com o heatmap embutido (PNG). |
 | **Info acionável** | Cada insight tem um ícone de info com um resumo do que o dado significa e **o que fazer** com ele para cada componente observado. |
 | **Contexto da tela** | `total de usuários` (pré-preenchido pela planilha) recalcula todas as métricas ao vivo. |
+| **Colar imagem** | Cole um print direto da área de transferência (`Ctrl/⌘+V` ou botão) — sem precisar salvar arquivo. |
+| **Copiar heatmap** | Além de baixar, o heatmap gerado pode ser **copiado** para colar em slides/documentos. |
+| **Grupos "mesma página"** | Marque imagens como a **mesma página** — por **variante/filtro** (casos de uso) ou por **scroll/posição** (scroll 1, scroll 2…). Badges por grupo na lista e nas abas. |
+| **Comparar telas** | Compare volumetria e métricas de uma tela com outra (componentes, cliques, relevância, concentração, top componente e relevância por componente em comum), com denominador editável por tela. |
+| **Regiões padronizadas** | Todos os retângulos usam uma **única cor de marca (amarelo)**, com contraste garantido no modo claro; a identificação é pelo número, não pela cor. |
+| **Exportar análise** | Leve os blocos para slides/one-pagers: **copiar imagem**, **copiar texto**, **baixar PNG** ou **exportar PDF** (impressão). |
+| **Guia (wizard)** | Assistente de 3 passos — (1) adicionar imagens, (2) subir a planilha, (3) associar as colunas — em vez de coachmarks soltos. |
 
 Há um botão **"Carregar exemplo"** para testar o fluxo completo sem arquivos
 próprios. Atalhos: `Esc` limpa seleção/desenho · `Delete` remove o retângulo
