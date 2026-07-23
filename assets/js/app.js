@@ -41,6 +41,7 @@ const state = {
   mode: "analysis",             // "analysis" | "funnel"
   funnel: { steps: [], viz: "bars", selectedId: null },
   // steps: [{ id, name, file, imageURL, volume, eventName, metric }]  metric: "users" | "count"
+  candidates: [],               // auto-detected component boxes awaiting an event link
 };
 const ZOOM_MIN = 0.4, ZOOM_MAX = 6;
 
@@ -479,6 +480,7 @@ function renderRegions() {
     wireRegion(node, r);
     overlay.appendChild(node);
   });
+  renderCandidates();
   renderRegionDetail(state.selectedId);
   syncHighlight();
 }
@@ -570,6 +572,159 @@ function commitRegion(event, x, y, w, h) {
   const rel = state.totalUsers > 0 ? " · " + fmtPct(relevanceOf(r, state.totalUsers, counts())) + " relevância" : "";
   toast(`"${event}" mapeado${rel}.`, "success");
 }
+
+/* ============================================================
+   Auto-detect components (classical CV — no AI, all in-browser)
+   Sobel edges → morphological dilation → connected components →
+   bounding boxes → heuristic filter. Boxes become "candidates"
+   the user links to an event.
+   ============================================================ */
+function detectComponents() {
+  if (!hasImage()) { toast("A detecção funciona em imagens (não em protótipo Figma). Adicione um print.", "error", 4200); return; }
+  const im = screenImg, nW = im.naturalWidth || im.width, nH = im.naturalHeight || im.height;
+  if (!nW || !nH) { toast("Aguarde a imagem carregar e tente de novo.", "info"); return; }
+  toast("Detectando componentes…", "info", 1400);
+  setTimeout(() => {
+    let boxes;
+    try { boxes = runDetection(im, nW, nH); }
+    catch (e) { toast("Não consegui ler os pixels da imagem (protegida pelo navegador).", "error", 4600); return; }
+    if (!boxes.length) { toast("Nenhum componente óbvio encontrado — desenhe manualmente.", "info", 4200); return; }
+    if (!state.show.regions) { state.show.regions = true; applyLayers(); }
+    state.candidates = boxes.map((b, i) => ({ id: "cand" + Date.now().toString(36) + i, ...b }));
+    renderCandidates();
+    toast(`${boxes.length} componente(s) sugerido(s) — clique em “+ evento” para vincular.`, "success", 4600);
+  }, 30);
+}
+
+function runDetection(im, nW, nH) {
+  const W = Math.min(880, nW), scale = W / nW, H = Math.round(nH * scale);
+  const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+  const ctx = cv.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(im, 0, 0, W, H);
+  const d = ctx.getImageData(0, 0, W, H).data, N = W * H;
+  const gray = new Float32Array(N);
+  for (let i = 0; i < N; i++) { const p = i * 4; gray[i] = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2]; }
+  // Sobel edge magnitude → binary
+  const edge = new Uint8Array(N), TH = 34, TH2 = TH * TH;
+  for (let y = 1; y < H - 1; y++) {
+    for (let x = 1; x < W - 1; x++) {
+      const i = y * W + x;
+      const a = gray[i - W - 1], b = gray[i - W], c = gray[i - W + 1], e = gray[i - 1], f = gray[i + 1], g = gray[i + W - 1], h = gray[i + W], k = gray[i + W + 1];
+      const gx = (c + 2 * f + k) - (a + 2 * e + g), gy = (g + 2 * h + k) - (a + 2 * b + c);
+      if (gx * gx + gy * gy > TH2) edge[i] = 1;
+    }
+  }
+  const r = Math.max(2, Math.round(W / 300));
+  const dil = dilateBinary(edge, W, H, r);
+  const boxes = ccBoxes(dil, W, H);
+  return refineBoxes(boxes, W, H).map((b) => ({ x: b.x / W, y: b.y / H, w: b.w / W, h: b.h / H }));
+}
+
+function dilateBinary(src, W, H, r) {
+  const tmp = new Uint8Array(W * H), out = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) { const row = y * W; for (let x = 0; x < W; x++) { let on = 0; for (let dx = -r; dx <= r; dx++) { const xx = x + dx; if (xx >= 0 && xx < W && src[row + xx]) { on = 1; break; } } tmp[row + x] = on; } }
+  for (let x = 0; x < W; x++) { for (let y = 0; y < H; y++) { let on = 0; for (let dy = -r; dy <= r; dy++) { const yy = y + dy; if (yy >= 0 && yy < H && tmp[yy * W + x]) { on = 1; break; } } out[y * W + x] = on; } }
+  return out;
+}
+
+function ccBoxes(bin, W, H) {
+  const seen = new Uint8Array(W * H), boxes = [], stack = [];
+  for (let s = 0; s < W * H; s++) {
+    if (!bin[s] || seen[s]) continue;
+    let minx = W, miny = H, maxx = 0, maxy = 0, area = 0;
+    stack.length = 0; stack.push(s); seen[s] = 1;
+    while (stack.length) {
+      const j = stack.pop(), x = j % W, y = (j / W) | 0;
+      area++; if (x < minx) minx = x; if (x > maxx) maxx = x; if (y < miny) miny = y; if (y > maxy) maxy = y;
+      if (x > 0) { const n = j - 1; if (bin[n] && !seen[n]) { seen[n] = 1; stack.push(n); } }
+      if (x < W - 1) { const n = j + 1; if (bin[n] && !seen[n]) { seen[n] = 1; stack.push(n); } }
+      if (y > 0) { const n = j - W; if (bin[n] && !seen[n]) { seen[n] = 1; stack.push(n); } }
+      if (y < H - 1) { const n = j + W; if (bin[n] && !seen[n]) { seen[n] = 1; stack.push(n); } }
+    }
+    boxes.push({ x: minx, y: miny, w: maxx - minx + 1, h: maxy - miny + 1, area });
+  }
+  return boxes;
+}
+
+function iouBox(a, b) {
+  const x1 = Math.max(a.x, b.x), y1 = Math.max(a.y, b.y);
+  const x2 = Math.min(a.x + a.w, b.x + b.w), y2 = Math.min(a.y + a.h, b.y + b.h);
+  const iw = Math.max(0, x2 - x1), ih = Math.max(0, y2 - y1), inter = iw * ih;
+  return inter / (a.w * a.h + b.w * b.h - inter || 1);
+}
+function containedFrac(inner, outer) {
+  const x1 = Math.max(inner.x, outer.x), y1 = Math.max(inner.y, outer.y);
+  const x2 = Math.min(inner.x + inner.w, outer.x + outer.w), y2 = Math.min(inner.y + inner.h, outer.y + outer.h);
+  const iw = Math.max(0, x2 - x1), ih = Math.max(0, y2 - y1);
+  return (iw * ih) / (inner.w * inner.h || 1);
+}
+
+function refineBoxes(boxes, W, H) {
+  const areaImg = W * H;
+  let out = boxes.filter((b) =>
+    b.w >= 22 && b.h >= 12 &&
+    !(b.w > W * 0.95 && b.h > H * 0.9) &&        // not the whole screen
+    b.w * b.h >= areaImg * 0.0006 &&             // min area
+    b.w * b.h <= areaImg * 0.55 &&               // not a huge background block
+    b.w / b.h <= 22 && b.h / b.w <= 14           // plausible aspect
+  );
+  out.sort((a, b) => b.w * b.h - a.w * a.h);      // largest first
+  const kept = [];
+  for (const b of out) {
+    let drop = false;
+    for (const k of kept) {
+      if (iouBox(b, k) > 0.55) { drop = true; break; }          // near-duplicate
+      if (containedFrac(b, k) > 0.85 && b.w * b.h < k.w * k.h * 0.4) { drop = true; break; } // small blob well inside a kept one
+    }
+    if (!drop) kept.push(b);
+    if (kept.length >= 48) break;
+  }
+  return kept;
+}
+
+/* ---- Candidate overlay + link flow ---- */
+function renderCandidates() {
+  overlay.querySelectorAll(".candidate").forEach((n) => n.remove());
+  const cands = state.candidates || [];
+  cands.forEach((cd) => {
+    const node = el("div", "candidate");
+    node.dataset.cid = cd.id;
+    node.style.left = cd.x * 100 + "%"; node.style.top = cd.y * 100 + "%";
+    node.style.width = cd.w * 100 + "%"; node.style.height = cd.h * 100 + "%";
+    node.innerHTML =
+      `<button class="candidate__link" title="Vincular um evento a esta região">+ evento</button>
+       <button class="candidate__x" title="Descartar sugestão"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
+    const link = node.querySelector(".candidate__link"), x = node.querySelector(".candidate__x");
+    [link, x].forEach((btn) => btn.addEventListener("pointerdown", (e) => e.stopPropagation()));
+    x.addEventListener("click", (e) => { e.stopPropagation(); dismissCandidate(cd.id); });
+    link.addEventListener("click", (e) => { e.stopPropagation(); openCandidateLink(cd, node); });
+    overlay.appendChild(node);
+  });
+  const bar = $("#cand-bar");
+  if (bar) { bar.hidden = cands.length === 0; if (cands.length) $("#cand-count").textContent = cands.length; }
+}
+
+function openCandidateLink(cd, node) {
+  if (!hasEvents()) { toast("Anexe a planilha de eventos para vincular.", "error"); return; }
+  const mapped = new Set(activeRegions().map((r) => r.event));
+  const opts = state.events.filter((e) => !e.macro && !mapped.has(e.name));
+  if (!opts.length) { toast("Todos os eventos já foram mapeados.", "info"); return; }
+  node.querySelector(".candidate-pop")?.remove();
+  const pop = el("div", "candidate-pop");
+  pop.innerHTML = `<select class="candidate-select"><option value="">Escolha o evento…</option>${opts.map((e) => `<option value="${e.name.replace(/"/g, "&quot;")}">${e.name}</option>`).join("")}</select>`;
+  node.appendChild(pop);
+  const sel = pop.querySelector("select");
+  sel.addEventListener("pointerdown", (e) => e.stopPropagation());
+  sel.addEventListener("click", (e) => e.stopPropagation());
+  sel.addEventListener("change", () => { if (sel.value) { const { x, y, w, h } = cd; dismissCandidate(cd.id); commitRegion(sel.value, x, y, w, h); } });
+  setTimeout(() => sel.focus(), 0);
+}
+
+function dismissCandidate(id) {
+  state.candidates = (state.candidates || []).filter((c) => c.id !== id);
+  renderCandidates();
+}
+function clearCandidates() { state.candidates = []; renderCandidates(); }
 
 /* ============================================================
    Selection / hover — cross-panel linking
@@ -1172,6 +1327,7 @@ function switchScreen(i) {
   if (i === state.screenIndex) return;
   state.screenIndex = i;
   state.selectedId = state.hoverId = state.armedEvent = null;
+  state.candidates = []; // sugestões são por tela
   state.zoom = 1;
   stage.classList.remove("is-armed"); overlay.classList.remove("is-drawing");
   renderAll();
@@ -2512,6 +2668,8 @@ function initControls() {
   $("#excelinput").addEventListener("change", (e) => { const f = e.target.files[0]; if (f) loadSpreadsheet(f); e.target.value = ""; });
 
   $("#btn-merge").addEventListener("click", mergeScreens);
+  $("#btn-detect").addEventListener("click", detectComponents);
+  $("#cand-clear").addEventListener("click", clearCandidates);
 
   // Redraw heatmap when the image finishes loading (size known)
   screenImg.addEventListener("load", () => { applyZoom(true); syncHighlight(); });

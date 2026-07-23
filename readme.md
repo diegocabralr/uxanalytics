@@ -47,6 +47,8 @@ do arquivo — cada retângulo é ligado a um evento real da planilha.
 | **Regiões padronizadas** | Todos os retângulos usam uma **única cor de marca (amarelo)**, com contraste garantido no modo claro; a identificação é pelo número, não pela cor. |
 | **Exportar análise** | Leve os blocos para slides/one-pagers: **copiar imagem**, **copiar texto**, **baixar PNG** ou **exportar PDF** (impressão). |
 | **Guia (wizard)** | Assistente de 3 passos — (1) adicionar imagens, (2) subir a planilha, (3) associar as colunas — em vez de coachmarks soltos. |
+| **Detectar componentes** | Detecção automática de elementos de interação **por visão computacional clássica (sem IA)** — Sobel + dilatação morfológica + connected-components no `<canvas>`, tudo no navegador. Gera retângulos-candidatos; você só clica em **“+ evento”** e escolhe o evento da planilha. (Não funciona em protótipo Figma embed, que é cross-origin.) |
+| **Exportar por métrica** | Exportar **tudo** ou cada métrica isolada (Concentração / Ranking & Pareto / Scroll × Relevância), como imagem, PDF, cópia de imagem e cópia de texto. |
 
 Há um botão **"Carregar exemplo"** para testar o fluxo completo sem arquivos
 próprios. Atalhos: `Esc` limpa seleção/desenho · `Delete` remove o retângulo
