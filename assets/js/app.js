@@ -1046,12 +1046,14 @@ function seedRand(str) {
 /* Paint an organic, Maze-style thermal heatmap onto ctx (does not clear).
    Each region is a cluster of soft gaussian points, weighted by relevance,
    so hot areas read as lumpy blobs with a red core and a soft blue halo. */
-function renderHeatmap(ctx, w, h, { radiusMult = 1, opacity = 0.85, progress = 1 } = {}) {
-  if (!canAnalyze()) return;
+function renderHeatmap(ctx, w, h, { radiusMult = 1, opacity = 0.85, progress = 1, regions = null, totalUsers = null } = {}) {
+  const regs = regions || analysisRegions();
+  const tu = totalUsers != null ? totalUsers : state.totalUsers;
+  if (!regs.length || !tu) return;
   const icv = document.createElement("canvas"); icv.width = w; icv.height = h;
   const ictx = icv.getContext("2d");
 
-  const rows = ranking(analysisRegions(), state.totalUsers, counts()), max = rows.max || 1;
+  const rows = ranking(regs, tu, counts()), max = rows.max || 1;
   const n = Math.ceil(rows.length * progress);
   const gauss = (rng) => (rng() + rng() + rng() - 1.5); // ~N(0, .5)
 
@@ -2176,6 +2178,42 @@ function moveFunnelPreview(e) {
 function hideFunnelPreview() { if (_fpreview) _fpreview.hidden = true; }
 
 /* ---- Lightbox (click a step to see its screenshot) -------- */
+/* The analysis screen linked to a funnel step (by explicit id, else same image). */
+function analysisForStep(step) {
+  let scr = step.analysisScreenId ? state.screens.find((s) => s.id === step.analysisScreenId) : null;
+  if (!scr) scr = state.screens.find((s) => s.imageURL === step.imageURL);
+  return scr || null;
+}
+/* Analysis summary for a step, or null if its screen has no mapped regions yet. */
+function stepAnalysisSummary(step) {
+  const scr = analysisForStep(step);
+  if (!scr || !(scr.regions || []).length) return null;
+  const denom = step.volume || scr.baseUsers || state.totalUsers || 0;
+  const c = counts();
+  const g = concentration(scr.regions, denom, c);
+  const rk = ranking(scr.regions, denom, c);
+  return { screen: scr, denom, mapped: scr.regions.length, conc: g, level: concentrationLevel(g), top: rk.slice(0, 3), heatmap: state.totalUsers > 0 || denom > 0 };
+}
+/* Render an image + heatmap thumbnail for a step's linked screen (dataURL). */
+function renderStepAnalysisThumb(step, cb) {
+  const sum = stepAnalysisSummary(step);
+  if (!sum) { cb(null); return; }
+  const im = new Image();
+  im.onload = () => {
+    const W = 360, ratio = (im.naturalHeight || im.height) / (im.naturalWidth || im.width) || 1.6;
+    const H = Math.max(120, Math.round(W * ratio));
+    const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+    const ctx = cv.getContext("2d");
+    try {
+      ctx.drawImage(im, 0, 0, W, H);
+      renderHeatmap(ctx, W, H, { radiusMult: 1, opacity: 0.82, regions: sum.screen.regions, totalUsers: sum.denom });
+      cb(cv.toDataURL("image/png"));
+    } catch { cb(null); }
+  };
+  im.onerror = () => cb(null);
+  im.src = sum.screen.imageURL;
+}
+
 function openFunnelLightbox(id) {
   const steps = funnelSteps();
   const idx = steps.findIndex((s) => s.id === id);
@@ -2193,11 +2231,36 @@ function openFunnelLightbox(id) {
   $("#funnel-lb-title").textContent = `${idx + 1}. ${s.name}`;
   $("#funnel-lb-img").src = s.imageURL;
   $("#funnel-lb-stats").innerHTML = rows.map(([k, v]) => `<div class="flb__row"><span>${k}</span><b>${v}</b></div>`).join("");
+
+  // Linked analysis (heatmap + métricas) — shown when the step was analysed.
+  const sum = stepAnalysisSummary(s);
+  const box = $("#funnel-lb-analysis");
+  const btn = $("#funnel-lb-analyze");
+  if (sum) {
+    box.hidden = false;
+    box.innerHTML =
+      `<div class="flb-an__head"><span class="flb-an__badge">● Análise vinculada</span></div>
+       <div class="flb-an__metrics">
+         <div class="flb-an__m"><span>Concentração</span><b>${sum.conc.toFixed(2).replace(".", ",")}</b><small style="color:var(--${sum.level.tone}-pure)">${sum.level.label}</small></div>
+         <div class="flb-an__m"><span>Componentes</span><b>${sum.mapped}</b><small>mapeados</small></div>
+       </div>
+       <div class="flb-an__top">
+         <span class="flb-an__toplabel">Top componentes (relevância)</span>
+         ${sum.top.map((r) => `<div class="flb-an__row"><span>${r.event}</span><b>${fmtPct(r.relevance)}</b></div>`).join("")}
+       </div>`;
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg> Ver / editar análise`;
+    // Swap the image for the heatmap thumbnail (async), guarded by the open step.
+    renderStepAnalysisThumb(s, (url) => { if (url && state.funnel.selectedId === id) $("#funnel-lb-img").src = url; });
+  } else {
+    box.hidden = true; box.innerHTML = "";
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg> Analisar componentes desta etapa`;
+  }
+
   const prev = $("#funnel-lb-prev"), next = $("#funnel-lb-next");
   prev.disabled = idx === 0; next.disabled = idx === steps.length - 1;
   prev.onclick = () => idx > 0 && openFunnelLightbox(steps[idx - 1].id);
   next.onclick = () => idx < steps.length - 1 && openFunnelLightbox(steps[idx + 1].id);
-  $("#funnel-lb-analyze").onclick = () => analyzeFunnelStep(id);
+  btn.onclick = () => analyzeFunnelStep(id);
   $("#funnel-lightbox").hidden = false;
 }
 function closeFunnelLightbox() { $("#funnel-lightbox").hidden = true; state.funnel.selectedId = null; }
@@ -2208,7 +2271,8 @@ function closeFunnelLightbox() { $("#funnel-lightbox").hidden = true; state.funn
 function analyzeFunnelStep(id) {
   const s = funnelSteps().find((x) => x.id === id);
   if (!s) return;
-  let idx = state.screens.findIndex((sc) => sc.imageURL === s.imageURL);
+  let idx = s.analysisScreenId ? state.screens.findIndex((sc) => sc.id === s.analysisScreenId) : -1;
+  if (idx < 0) idx = state.screens.findIndex((sc) => sc.imageURL === s.imageURL);
   if (idx < 0) {
     state.screens.push({
       id: "fa" + Date.now().toString(36), name: s.name, file: s.file || (s.name + ".png"),
@@ -2217,6 +2281,9 @@ function analyzeFunnelStep(id) {
     });
     idx = state.screens.length - 1;
   }
+  // Bidirectional link so the funnel can show this step's analysis later.
+  s.analysisScreenId = state.screens[idx].id;
+  state.screens[idx].funnelStepId = s.id;
   state.screenIndex = idx;
   state.selectedId = state.hoverId = state.armedEvent = null;
   state.candidates = []; state.zoom = 1;

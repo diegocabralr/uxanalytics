@@ -1516,6 +1516,18 @@ button.card__expand svg { width: 15px; height: 15px; }
 .flb__imgwrap img { max-width: 100%; max-height: 74vh; width: auto; height: auto; object-fit: contain; border-radius: var(--br-sm); box-shadow: var(--elev-2); }
 .flb__side { border-left: var(--bw-sm) solid var(--content-line); padding: var(--sp-lg); display: flex; flex-direction: column; gap: var(--sp-lg); }
 .flb__stats { display: flex; flex-direction: column; gap: var(--sp-sm); }
+.flb-an { display: flex; flex-direction: column; gap: var(--sp-sm); padding: var(--sp-sm); border: var(--bw-sm) solid color-mix(in srgb, var(--brand-pure) 40%, var(--content-line)); border-radius: var(--br-sm); background: color-mix(in srgb, var(--brand-pure) 6%, var(--surface-card)); }
+.flb-an__badge { font-size: 10px; font-weight: var(--fw-bold); letter-spacing: .04em; text-transform: uppercase; color: var(--content-brand-highlight); }
+.flb-an__metrics { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-sm); }
+.flb-an__m { display: flex; flex-direction: column; gap: 1px; }
+.flb-an__m span { font-size: 10px; color: var(--content-03); }
+.flb-an__m b { font-family: var(--font-mono); font-size: var(--fs-md); font-weight: var(--fw-bold); color: var(--content-pure); line-height: 1; }
+.flb-an__m small { font-size: 10px; color: var(--content-02); }
+.flb-an__top { display: flex; flex-direction: column; gap: 3px; }
+.flb-an__toplabel { font-size: 10px; color: var(--content-03); text-transform: uppercase; letter-spacing: .04em; }
+.flb-an__row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-sm); font-size: var(--fs-xxxs); }
+.flb-an__row span { color: var(--content-01); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flb-an__row b { font-family: var(--font-mono); color: var(--content-brand-highlight); font-weight: var(--fw-semibold); }
 .flb__row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-sm); font-size: var(--fs-xxs); }
 .flb__row span { color: var(--content-03); }
 .flb__row b { color: var(--content-pure); font-family: var(--font-mono); font-weight: var(--fw-semibold); text-align: right; }
