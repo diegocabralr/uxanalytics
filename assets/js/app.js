@@ -2110,89 +2110,150 @@ function renderCompare() {
    ============================================================ */
 let analysisCanvas = null;
 
-function buildAnalysisText() {
+const ANALYSIS_BLOCKS = { all: "Tudo", concentration: "Concentração", ranking: "Ranking & Pareto", scroll: "Scroll × Relevância" };
+
+function buildAnalysisText(kind = "all") {
   const s = curScreen(); if (!s) return "";
   const c = counts();
-  const g = concentration(analysisRegions(), state.totalUsers, c);
-  const lvl = concentrationLevel(g);
-  const rk = ranking(analysisRegions(), state.totalUsers, c);
-  const pts = scrollModel(analysisRegions(), state.totalUsers, c);
+  const want = (k) => kind === "all" || kind === k;
   const L = [];
-  L.push(`UX Analytics — ${s.name}`);
+  L.push(`UX Analytics — ${s.name}${isJointGroup() ? " (análise conjunta do grupo)" : ""}`);
   L.push(`Total de usuários: ${fmtInt(state.totalUsers)} · componentes mapeados: ${analysisRegions().length}`);
-  L.push("");
-  L.push(`Concentração de atenção: ${g.toFixed(2).replace(".", ",")} (${lvl.label})`);
-  L.push("");
-  L.push("Ranking por relevância (cliques ÷ usuários):");
-  rk.forEach((r, i) => L.push(`  ${i + 1}. ${r.event} — ${fmtPct(r.relevance)}${i === rk.cutIndex ? "  ← corte 80%" : ""}`));
-  const anomalies = pts.filter((p) => p.anomaly);
-  if (anomalies.length) {
+  if (want("concentration")) {
+    const g = concentration(analysisRegions(), state.totalUsers, c), lvl = concentrationLevel(g);
     L.push("");
-    L.push("Anomalias de scroll:");
-    anomalies.forEach((p) => L.push(`  • ${p.event} — ${p.positive ? "acima do esperado (oportunidade)" : "abaixo do esperado (atenção)"}`));
+    L.push(`Concentração de atenção: ${g.toFixed(2).replace(".", ",")} (${lvl.label})`);
+  }
+  if (want("ranking")) {
+    const rk = ranking(analysisRegions(), state.totalUsers, c);
+    L.push("");
+    L.push("Ranking por relevância (cliques ÷ usuários):");
+    rk.forEach((r, i) => L.push(`  ${i + 1}. ${r.event} — ${fmtPct(r.relevance)}${i === rk.cutIndex ? "  ← corte 80%" : ""}`));
+  }
+  if (want("scroll")) {
+    const pts = scrollModel(analysisRegions(), state.totalUsers, c);
+    const anomalies = pts.filter((p) => p.anomaly);
+    L.push("");
+    L.push("Scroll × Relevância:");
+    if (anomalies.length) anomalies.forEach((p) => L.push(`  • ${p.event} — ${p.positive ? "acima do esperado (oportunidade)" : "abaixo do esperado (atenção)"}`));
+    else L.push("  Sem anomalias — relevância acompanha a posição esperada.");
   }
   L.push("");
   L.push("Gerado com UX Analytics");
   return L.join("\n");
 }
 
-/* Draw a branded summary card to a canvas (copy/download for slides). */
-function renderAnalysisCanvas() {
-  const s = curScreen(); if (!s) return null;
-  const c = counts();
-  const g = concentration(analysisRegions(), state.totalUsers, c);
-  const lvl = concentrationLevel(g);
-  const rk = ranking(analysisRegions(), state.totalUsers, c);
+function analysisPalette() {
   const dark = document.documentElement.dataset.theme !== "light";
-  const scale = 2, W = 720, rows = Math.min(rk.length, 8);
-  const H = 250 + rows * 34 + 40;
+  return { dark, bg: dark ? "#1a1a1a" : "#ffffff", card: dark ? "#222222" : "#f4f4f4",
+    ink: dark ? "#f5f5f5" : "#141414", sub: dark ? "#a5a5a5" : "#6a6a6a",
+    brand: "#FBC105", line: dark ? "rgba(255,255,255,.1)" : "rgba(0,0,0,.1)",
+    good: "#3FB079", bad: "#F45B5B" };
+}
+
+/* ---- Canvas sections (each draws at y, returns the new y) ---- */
+function acHeader(x, s, P, W) {
+  x.fillStyle = P.brand; roundRect(x, 28, 26, 34, 34, 8); x.fill();
+  x.fillStyle = "#121212"; x.font = "800 15px monospace"; x.textBaseline = "middle"; x.textAlign = "center";
+  x.fillText("UX", 45, 44);
+  x.textAlign = "left"; x.fillStyle = P.ink; x.font = "700 20px sans-serif";
+  x.fillText(truncateText(x, s.name + (isJointGroup() ? "  ·  conjunta" : ""), W - 90), 74, 38);
+  x.fillStyle = P.sub; x.font = "500 13px sans-serif";
+  x.fillText(`${fmtInt(state.totalUsers)} usuários · ${analysisRegions().length} componentes mapeados`, 74, 56);
+  return 90;
+}
+function acConcentration(x, y, P, W, c) {
+  const g = concentration(analysisRegions(), state.totalUsers, c), lvl = concentrationLevel(g);
+  x.fillStyle = P.card; roundRect(x, 28, y, W - 56, 68, 12); x.fill();
+  x.textAlign = "left"; x.fillStyle = P.sub; x.font = "600 12px sans-serif"; x.fillText("CONCENTRAÇÃO DE ATENÇÃO", 46, y + 20);
+  x.fillStyle = P.ink; x.font = "800 30px monospace"; x.fillText(g.toFixed(2).replace(".", ","), 46, y + 46);
+  const tone = lvl.tone === "error" ? P.bad : lvl.tone === "alert" ? P.brand : P.good;
+  x.fillStyle = tone; x.font = "700 14px sans-serif"; x.textAlign = "right"; x.fillText(lvl.label, W - 46, y + 40); x.textAlign = "left";
+  // mini gradient bar
+  const bx = 46, bw = W - 92, by = y + 56;
+  const grad = x.createLinearGradient(bx, 0, bx + bw, 0);
+  grad.addColorStop(0, P.good); grad.addColorStop(0.5, P.brand); grad.addColorStop(1, P.bad);
+  x.fillStyle = grad; roundRect(x, bx, by, bw, 5, 3); x.fill();
+  x.fillStyle = P.ink; roundRect(x, bx + Math.max(0, Math.min(1, g)) * bw - 3, by - 2, 6, 9, 3); x.fill();
+  return y + 92;
+}
+function acRanking(x, y, P, W, c, maxRows) {
+  const rk = ranking(analysisRegions(), state.totalUsers, c);
+  const rows = Math.min(rk.length, maxRows);
+  x.textAlign = "left"; x.fillStyle = P.sub; x.font = "600 12px sans-serif";
+  x.fillText("RANKING POR RELEVÂNCIA (CLIQUES ÷ USUÁRIOS)", 28, y); y += 22;
+  const max = rk.max || 1, barX = 250, barW = W - barX - 90;
+  rk.slice(0, rows).forEach((r, i) => {
+    x.fillStyle = i === rk.cutIndex ? P.brand : P.sub; x.font = "700 13px monospace"; x.fillText(String(i + 1), 30, y + 10);
+    x.fillStyle = P.ink; x.font = "600 13px sans-serif"; x.fillText(truncateText(x, r.event, 190), 48, y + 10);
+    x.fillStyle = P.line; roundRect(x, barX, y + 3, barW, 12, 6); x.fill();
+    x.fillStyle = P.brand; roundRect(x, barX, y + 3, Math.max(6, (r.relevance / max) * barW), 12, 6); x.fill();
+    x.fillStyle = P.ink; x.font = "700 12px monospace"; x.textAlign = "right"; x.fillText(fmtPct(r.relevance), W - 30, y + 10); x.textAlign = "left";
+    if (i === rk.cutIndex && rk.cutIndex > 0) { x.strokeStyle = P.brand; x.setLineDash([3, 3]); x.beginPath(); x.moveTo(barX, y + 24); x.lineTo(W - 30, y + 24); x.stroke(); x.setLineDash([]); }
+    y += 34;
+  });
+  return y + 4;
+}
+function acScroll(x, y, P, W, c) {
+  const pts = scrollModel(analysisRegions(), state.totalUsers, c);
+  x.textAlign = "left"; x.fillStyle = P.sub; x.font = "600 12px sans-serif";
+  x.fillText("SCROLL × RELEVÂNCIA (PROFUNDIDADE × USO)", 28, y); y += 14;
+  const plotX = 44, plotW = W - 88, plotY = y + 8, plotH = 150;
+  // plot bg
+  x.fillStyle = P.card; roundRect(x, 28, y, W - 56, plotH + 40, 12); x.fill();
+  const X = (d) => plotX + d * plotW, Y = (v) => plotY + (1 - v) * plotH;
+  // axes
+  x.strokeStyle = P.line; x.lineWidth = 1;
+  x.beginPath(); x.moveTo(plotX, plotY); x.lineTo(plotX, plotY + plotH); x.lineTo(plotX + plotW, plotY + plotH); x.stroke();
+  // expected decay curve
+  x.strokeStyle = P.sub; x.setLineDash([4, 3]); x.lineWidth = 1.5; x.beginPath();
+  for (let d = 0; d <= 1.0001; d += 0.02) { const px = X(d), py = Y(Math.exp(-1.8 * d)); d === 0 ? x.moveTo(px, py) : x.lineTo(px, py); }
+  x.stroke(); x.setLineDash([]);
+  // points
+  pts.forEach((p) => {
+    const px = X(p.depth), py = Y(p.rel);
+    x.fillStyle = p.anomaly ? (p.positive ? P.good : P.bad) : P.brand;
+    x.beginPath(); x.arc(px, py, p.anomaly ? 6 : 5, 0, Math.PI * 2); x.fill();
+    if (p.anomaly) { x.fillStyle = p.positive ? P.good : P.bad; x.font = "700 10px sans-serif"; x.textAlign = "center"; x.fillText(p.positive ? "▲" : "▼", px, py - 10); x.textAlign = "left"; }
+  });
+  // labels
+  x.fillStyle = P.sub; x.font = "500 10px sans-serif";
+  x.fillText("topo", plotX, plotY + plotH + 16); x.textAlign = "right"; x.fillText("rodapé", plotX + plotW, plotY + plotH + 16); x.textAlign = "left";
+  x.fillText("relevância ↑", plotX, plotY - 2);
+  return y + plotH + 40 + 8;
+}
+
+/* Draw a branded analysis card. kind: all | concentration | ranking | scroll */
+function renderAnalysisCanvas(kind = "all") {
+  const s = curScreen(); if (!s) return null;
+  const c = counts(), P = analysisPalette();
+  const scale = 2, W = 720;
+  const want = (k) => kind === "all" || kind === k;
+  const rkLen = want("ranking") ? Math.min(ranking(analysisRegions(), state.totalUsers, c).length, kind === "ranking" ? 12 : 8) : 0;
+  // measure height
+  let H = 84;
+  if (want("concentration")) H += 92;
+  if (want("ranking")) H += 22 + rkLen * 34 + 8;
+  if (want("scroll")) H += 14 + 150 + 40 + 8;
+  H += 30;
   const cv = document.createElement("canvas");
   cv.width = W * scale; cv.height = H * scale;
   const x = cv.getContext("2d"); x.scale(scale, scale);
-  const bg = dark ? "#1a1a1a" : "#ffffff", card = dark ? "#222222" : "#f4f4f4";
-  const ink = dark ? "#f5f5f5" : "#141414", sub = dark ? "#a5a5a5" : "#6a6a6a";
-  const brand = "#FBC105", line = dark ? "rgba(255,255,255,.1)" : "rgba(0,0,0,.1)";
-  x.fillStyle = bg; x.fillRect(0, 0, W, H);
-  // header
-  x.fillStyle = brand; roundRect(x, 28, 26, 34, 34, 8); x.fill();
-  x.fillStyle = "#121212"; x.font = "800 15px monospace"; x.textBaseline = "middle"; x.textAlign = "center";
-  x.fillText("UX", 45, 44);
-  x.textAlign = "left"; x.fillStyle = ink; x.font = "700 20px sans-serif";
-  x.fillText(s.name, 74, 38);
-  x.fillStyle = sub; x.font = "500 13px sans-serif";
-  x.fillText(`${fmtInt(state.totalUsers)} usuários · ${analysisRegions().length} componentes mapeados`, 74, 56);
-  // concentration tile
-  let y = 90;
-  x.fillStyle = card; roundRect(x, 28, y, W - 56, 68, 12); x.fill();
-  x.fillStyle = sub; x.font = "600 12px sans-serif"; x.fillText("CONCENTRAÇÃO DE ATENÇÃO", 46, y + 20);
-  x.fillStyle = ink; x.font = "800 30px monospace"; x.fillText(g.toFixed(2).replace(".", ","), 46, y + 46);
-  const tone = lvl.tone === "error" ? "#F45B5B" : lvl.tone === "alert" ? brand : "#3Fb079";
-  x.fillStyle = tone; x.font = "700 14px sans-serif"; x.textAlign = "right"; x.fillText(lvl.label, W - 46, y + 34); x.textAlign = "left";
-  // ranking
-  y += 92;
-  x.fillStyle = sub; x.font = "600 12px sans-serif"; x.fillText("RANKING POR RELEVÂNCIA (CLIQUES ÷ USUÁRIOS)", 28, y);
-  y += 22;
-  const max = rk.max || 1, barX = 250, barW = W - barX - 90;
-  rk.slice(0, rows).forEach((r, i) => {
-    x.fillStyle = i === rk.cutIndex ? brand : sub; x.font = "700 13px monospace"; x.fillText(String(i + 1), 30, y + 10);
-    x.fillStyle = ink; x.font = "600 13px sans-serif";
-    x.fillText(truncateText(x, r.event, 190), 48, y + 10);
-    x.fillStyle = line; roundRect(x, barX, y + 3, barW, 12, 6); x.fill();
-    x.fillStyle = brand; const w = Math.max(6, (r.relevance / max) * barW); roundRect(x, barX, y + 3, w, 12, 6); x.fill();
-    x.fillStyle = ink; x.font = "700 12px monospace"; x.textAlign = "right"; x.fillText(fmtPct(r.relevance), W - 30, y + 10); x.textAlign = "left";
-    if (i === rk.cutIndex && rk.cutIndex > 0) { x.strokeStyle = brand; x.setLineDash([3, 3]); x.beginPath(); x.moveTo(barX, y + 24); x.lineTo(W - 30, y + 24); x.stroke(); x.setLineDash([]); }
-    y += 34;
-  });
-  // footer
-  x.fillStyle = sub; x.font = "500 11px sans-serif"; x.fillText("Gerado com UX Analytics", 28, H - 20);
+  x.fillStyle = P.bg; x.fillRect(0, 0, W, H);
+  let y = acHeader(x, s, P, W);
+  if (want("concentration")) y = acConcentration(x, y, P, W, c);
+  if (want("ranking")) y = acRanking(x, y, P, W, c, kind === "ranking" ? 12 : 8);
+  if (want("scroll")) y = acScroll(x, y, P, W, c);
+  x.textAlign = "left"; x.fillStyle = P.sub; x.font = "500 11px sans-serif";
+  x.fillText("Gerado com UX Analytics" + (isJointGroup() ? " · análise conjunta" : ""), 28, H - 14);
   return cv;
 }
 function roundRect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 function truncateText(ctx, t, maxW) { if (ctx.measureText(t).width <= maxW) return t; let s = t; while (s.length > 1 && ctx.measureText(s + "…").width > maxW) s = s.slice(0, -1); return s + "…"; }
 
-function openAnalysisModal() {
-  if (!canAnalyze()) { toast("Mapeie componentes e informe o total de usuários para exportar a análise.", "error"); return; }
-  analysisCanvas = renderAnalysisCanvas();
+let analysisKind = "all";
+function renderAnalysisPreview() {
+  analysisCanvas = renderAnalysisCanvas(analysisKind);
   const host = $("#analysis-preview"); host.innerHTML = "";
   // Render an <img> (not the raw canvas) so the legacy copy path can select it.
   if (analysisCanvas) {
@@ -2201,22 +2262,29 @@ function openAnalysisModal() {
     img.src = analysisCanvas.toDataURL("image/png");
     host.appendChild(img);
   }
+  $$("#analysis-kind .segmented__btn").forEach((b) => b.classList.toggle("is-active", b.dataset.kind === analysisKind));
+}
+function openAnalysisModal() {
+  if (!canAnalyze()) { toast("Mapeie componentes e informe o total de usuários para exportar a análise.", "error"); return; }
+  renderAnalysisPreview();
   $("#analysis-modal").hidden = false;
 }
+function setAnalysisKind(kind) { if (!ANALYSIS_BLOCKS[kind]) return; analysisKind = kind; renderAnalysisPreview(); }
 function closeAnalysisModal() { $("#analysis-modal").hidden = true; }
+const analysisFileTag = () => (analysisKind === "all" ? "analise" : "analise-" + analysisKind) + "-" + (curScreen()?.name || "tela").replace(/\s+/g, "-").toLowerCase();
 function copyAnalysisImage() {
-  copyImageEl($("#analysis-img"), canvasBlob(analysisCanvas || renderAnalysisCanvas()),
+  copyImageEl($("#analysis-img"), canvasBlob(analysisCanvas || renderAnalysisCanvas(analysisKind)),
     "Cópia bloqueada aqui — clique com o botão direito na prévia acima → “Copiar imagem”.");
 }
 async function downloadAnalysisImage() {
-  const cv = analysisCanvas || renderAnalysisCanvas(); if (!cv) return;
+  const cv = analysisCanvas || renderAnalysisCanvas(analysisKind); if (!cv) return;
   let b; try { b = await canvasBlob(cv); } catch { return; }
-  triggerDownload(URL.createObjectURL(b), `analise-${(curScreen()?.name || "tela").replace(/\s+/g, "-").toLowerCase()}.png`, true);
+  triggerDownload(URL.createObjectURL(b), analysisFileTag() + ".png", true);
   toast("Baixando…", "success", 1500);
 }
-function copyAnalysisText() { copyText(buildAnalysisText(), "Texto copiado — cole no seu documento."); }
+function copyAnalysisText() { copyText(buildAnalysisText(analysisKind), "Texto copiado — cole no seu documento."); }
 function exportAnalysisPDF() {
-  const cv = analysisCanvas || renderAnalysisCanvas();
+  const cv = analysisCanvas || renderAnalysisCanvas(analysisKind);
   if (!cv) { toast("Nada para exportar.", "error"); return; }
   let holder = $(".analysis-print");
   if (!holder) { holder = el("div", "analysis-print"); document.body.appendChild(holder); }
@@ -2417,6 +2485,7 @@ function initControls() {
   $("#analysis-copy-txt").addEventListener("click", copyAnalysisText);
   $("#analysis-download-img").addEventListener("click", downloadAnalysisImage);
   $("#analysis-pdf").addEventListener("click", exportAnalysisPDF);
+  $("#analysis-kind").addEventListener("click", (e) => { const b = e.target.closest(".segmented__btn"); if (b) setAnalysisKind(b.dataset.kind); });
 
   // Onboarding wizard
   $("#btn-guide").addEventListener("click", () => openWizard(1));

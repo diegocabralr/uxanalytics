@@ -594,7 +594,13 @@
         </button>
       </div>
       <div class="modal__body">
-        <p class="insight-sub">Leve os blocos de análise para seus slides ou one-pagers. A imagem cola direto na apresentação; o texto, no seu documento.</p>
+        <p class="insight-sub">Leve os blocos de análise para seus slides ou one-pagers. Escolha exportar <b>tudo</b> ou uma métrica isolada. A imagem cola direto na apresentação; o texto, no seu documento.</p>
+        <div class="segmented segmented--wrap" id="analysis-kind">
+          <button class="segmented__btn is-active" data-kind="all">Tudo</button>
+          <button class="segmented__btn" data-kind="concentration">Concentração</button>
+          <button class="segmented__btn" data-kind="ranking">Ranking &amp; Pareto</button>
+          <button class="segmented__btn" data-kind="scroll">Scroll × Relevância</button>
+        </div>
         <div class="analysis-card" id="analysis-preview"><!-- canvas injected by JS --></div>
         <div class="analysis-actions">
           <button class="btn btn--brand btn--sm" id="analysis-copy-img">

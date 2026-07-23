@@ -1521,7 +1521,10 @@ button.card__expand svg { width: 15px; height: 15px; }
 .cmp-section-title { margin: var(--sp-lg) 0 var(--sp-sm); font-size: var(--fs-xxs); font-weight: var(--fw-semibold); color: var(--content-01); }
 
 /* ---- Export analysis modal ------------------------------- */
-.analysis-card { margin: var(--sp-md) 0; border-radius: var(--br-md); overflow: hidden; background: var(--canvas-bg); display: flex; justify-content: center; }
+.segmented--wrap { display: flex; flex-wrap: wrap; border-radius: var(--br-lg); }
+.segmented--wrap .segmented__btn { height: 30px; }
+.analysis-card { margin: var(--sp-md) 0; border-radius: var(--br-md); overflow: hidden; background: var(--canvas-bg); display: flex; justify-content: center; max-height: 62vh; }
+.analysis-card img { max-height: 62vh; object-fit: contain; }
 .analysis-actions { display: flex; flex-wrap: wrap; gap: var(--sp-sm); }
 .analysis-actions .btn { flex: 1 1 auto; }
 
