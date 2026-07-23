@@ -266,7 +266,13 @@ export function scrollModel(regions, totalUsers, counts) {
 }
 
 export const fmtInt = (n) => Math.round(n).toLocaleString("pt-BR");
-export const fmtPct = (v) => (v * 100).toFixed(1).replace(".", ",") + "%";
+/* Adaptive decimals: no decimals for big values (≥100%), 1 casa entre
+   1–100%, 2 casas abaixo de 1% — melhor leitura em toda a plataforma. */
+export const fmtPct = (v) => {
+  const p = v * 100;
+  const d = p >= 100 ? 0 : p >= 1 ? 1 : p > 0 ? 2 : 0;
+  return p.toFixed(d).replace(".", ",") + "%";
+};
 
 /* ============================================================
    Optional worked example (synthetic image + events)
