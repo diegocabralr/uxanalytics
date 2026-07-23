@@ -49,6 +49,9 @@ do arquivo — cada retângulo é ligado a um evento real da planilha.
 | **Guia (wizard)** | Assistente de 3 passos — (1) adicionar imagens, (2) subir a planilha, (3) associar as colunas — em vez de coachmarks soltos. |
 | **Detectar componentes** | Detecção automática de elementos de interação **por visão computacional clássica (sem IA)** — Sobel + dilatação morfológica + connected-components no `<canvas>`, tudo no navegador. Gera retângulos-candidatos; você só clica em **“+ evento”** e escolhe o evento da planilha. (Não funciona em protótipo Figma embed, que é cross-origin.) |
 | **Exportar por métrica** | Exportar **tudo** ou cada métrica isolada (Concentração / Ranking & Pareto / Scroll × Relevância), como imagem, PDF, cópia de imagem e cópia de texto. |
+| **Drill-down do funil** | No lightbox de uma etapa do funil, **“Analisar componentes desta etapa”** abre aquela tela no modo Análise (reaproveitando ou criando a tela), já com o **total de usuários = volumetria da etapa** — ligando a visão macro do funil à análise por componente. |
+| **Recomendações por componente** | Um **veredito acionável único** por componente (Manter · Promover · Reposicionar · Aumentar alvo · Rever clareza · Revisar · Monitorar), combinando **relevância + posição + área**; problemas primeiro, com o texto do que fazer. |
+| **Competição por atenção** | Sinaliza componentes **próximos e ambos relevantes** que disputam o mesmo clique (canibalização), sugerindo hierarquizar/afastar/fundir. |
 
 Há um botão **"Carregar exemplo"** para testar o fluxo completo sem arquivos
 próprios. Atalhos: `Esc` limpa seleção/desenho · `Delete` remove o retângulo

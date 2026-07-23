@@ -368,6 +368,48 @@
           </div>
         </div>
 
+        <!-- Recommendations -->
+        <div class="card reveal" data-reveal="3">
+          <div class="card__head">
+            <div class="card__title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1 1 2h6c0-1 .3-1.3 1-2A6 6 0 0 0 12 3Z"/></svg>
+              <span class="eyebrow">Recomendações</span>
+            </div>
+            <div class="card__actions">
+              <button class="card__info" data-tip title="O que isso diz">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="card-tip" hidden>
+            <b>Recomendação por componente</b> — um veredito único combinando <i>relevância</i>, <i>posição</i> e <i>área</i>.
+            <u>Como ler:</u> problemas (vermelho/âmbar) primeiro. Ex.: destaque alto + uso baixo → reposicionar; forte lá embaixo → promover; alvo pequeno → aumentar.
+          </div>
+          <div class="rec-list" id="rec-list"><!-- rendered by JS --></div>
+          <p class="card__empty" id="rec-empty">Mapeie componentes e informe o total de usuários para ver as recomendações.</p>
+        </div>
+
+        <!-- Attention competition -->
+        <div class="card reveal" data-reveal="4">
+          <div class="card__head">
+            <div class="card__title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 8l-4 4 4 4M17 8l4 4-4 4M14 4l-4 16"/></svg>
+              <span class="eyebrow">Competição por atenção</span>
+            </div>
+            <div class="card__actions">
+              <button class="card__info" data-tip title="O que isso diz">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="card-tip" hidden>
+            <b>Competição por atenção</b> — componentes <i>próximos</i> e <i>ambos relevantes</i> tendem a disputar o mesmo clique (canibalização).
+            <u>Acionável:</u> hierarquize um deles (primário × secundário), afaste-os ou funda a ação.
+          </div>
+          <div class="comp-list" id="comp-list"><!-- rendered by JS --></div>
+          <p class="card__empty" id="comp-empty">Mapeie componentes e informe o total de usuários.</p>
+        </div>
+
         <div class="rightfoot">
           <button class="btn btn--brand btn--block" id="btn-heatmap">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c2 3 5 4 5 8a5 5 0 0 1-10 0c0-2 1-3 2-4"/></svg>
@@ -459,6 +501,10 @@
         <div class="flb__imgwrap"><img id="funnel-lb-img" alt="" /></div>
         <div class="flb__side">
           <div class="flb__stats" id="funnel-lb-stats"><!-- rendered by JS --></div>
+          <button class="btn btn--brand btn--block btn--sm" id="funnel-lb-analyze">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>
+            Analisar componentes desta etapa
+          </button>
           <div class="flb__nav">
             <button class="btn btn--outline btn--sm" id="funnel-lb-prev">← Anterior</button>
             <button class="btn btn--outline btn--sm" id="funnel-lb-next">Próxima →</button>

@@ -1534,6 +1534,33 @@ button.card__expand svg { width: 15px; height: 15px; }
    ============================================================ */
 .rp-actions { display: flex; gap: var(--sp-xs); }
 .rp-actions .btn { flex: 1; }
+
+/* ---- Recommendations card -------------------------------- */
+.rec-list { display: flex; flex-direction: column; gap: var(--sp-xs); }
+.rec {
+  display: flex; align-items: flex-start; gap: var(--sp-sm); width: 100%; text-align: left;
+  padding: var(--sp-sm); border: var(--bw-sm) solid var(--content-line); border-radius: var(--br-sm);
+  background: var(--surface-card); cursor: pointer;
+  transition: border-color var(--dur-2) var(--ease-out-quart), background var(--dur-2) var(--ease-out-quart);
+}
+@media (hover: hover) { .rec:hover { border-color: color-mix(in srgb, var(--rc) 55%, var(--content-line)); background: color-mix(in srgb, var(--rc) 6%, var(--surface-card)); } }
+.rec__idx { flex: none; width: 18px; height: 18px; display: grid; place-items: center; border-radius: var(--br-xxs); font-family: var(--font-mono); font-size: 10px; font-weight: var(--fw-bold); color: #121212; background: var(--rc, var(--brand-pure)); margin-top: 1px; }
+.rec__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.rec__name { font-size: var(--fs-xxs); font-weight: var(--fw-semibold); color: var(--content-pure); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec__text { font-size: var(--fs-xxxs); color: var(--content-02); line-height: 1.35; }
+.rec__tag { flex: none; padding: 2px 8px; border-radius: var(--br-circular); font-size: 10px; font-weight: var(--fw-bold); white-space: nowrap; }
+.rec__tag.tone-error { color: var(--error-pure); background: var(--error-container); }
+.rec__tag.tone-alert { color: var(--alert-pure, #C98A00); background: color-mix(in srgb, var(--brand-pure) 20%, transparent); }
+.rec__tag.tone-success { color: var(--success-pure); background: color-mix(in srgb, var(--success-pure) 16%, transparent); }
+.rec__tag.tone-neutral { color: var(--content-02); background: var(--surface-sunken); }
+
+/* ---- Competition card ------------------------------------ */
+.comp-list { display: flex; flex-direction: column; gap: var(--sp-xs); }
+.comp { padding: var(--sp-sm); border: var(--bw-sm) solid var(--content-line); border-radius: var(--br-sm); background: var(--surface-card); cursor: pointer; display: flex; flex-direction: column; gap: 3px; transition: border-color var(--dur-2) var(--ease-out-quart); }
+@media (hover: hover) { .comp:hover { border-color: var(--content-line-strong); } }
+.comp__pair { font-size: var(--fs-xxs); font-weight: var(--fw-semibold); }
+.comp__vs { color: var(--content-03); margin: 0 2px; }
+.comp__note { font-size: var(--fs-xxxs); color: var(--content-02); line-height: 1.35; }
 .joint-banner {
   display: flex; align-items: center; gap: var(--sp-xs);
   padding: 7px var(--sp-sm); border-radius: var(--br-sm);

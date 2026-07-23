@@ -793,7 +793,7 @@ function syncHighlight() {
 /* ============================================================
    Right panel — insights
    ============================================================ */
-function renderInsights() { updateJointBanner(); renderConcentration(); renderRank(); renderScroll(); }
+function renderInsights() { updateJointBanner(); renderConcentration(); renderRank(); renderScroll(); renderRecommendations(); renderCompetition(); }
 
 /* Banner telling the user the insights are read jointly across a variant group. */
 function updateJointBanner() {
@@ -909,6 +909,107 @@ function renderScroll() {
     d.style.cursor = "pointer";
   });
   syncHighlight();
+}
+
+/* ============================================================
+   Decision support — consolidated recommendation per component
+   and attention-competition (cannibalization) detection.
+   ============================================================ */
+const median = (arr) => { if (!arr.length) return 0; const a = [...arr].sort((x, y) => x - y); const m = a.length >> 1; return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2; };
+const REC_WEIGHT = { error: 0, alert: 1, success: 2, neutral: 3 };
+
+/* One actionable verdict per component from relevance + position + area. */
+function componentInsights() {
+  const c = counts(), regs = analysisRegions();
+  if (!regs.length || !state.totalUsers) return [];
+  const rk = ranking(regs, state.totalUsers, c);
+  const pts = scrollModel(regs, state.totalUsers, c);
+  const pById = new Map(pts.map((p) => [p.region.id, p]));
+  const medRel = median(rk.map((r) => r.relevance));
+  const medArea = median(regs.map((r) => r.w * r.h));
+  const rows = rk.map((row) => {
+    const r = row.region, p = pById.get(r.id) || {};
+    const rel = row.relevance, area = r.w * r.h, depth = r.y + r.h / 2;
+    const lowRel = rel < Math.max(0.02, medRel * 0.45);
+    const highRel = rel >= medRel;
+    const bigArea = area > medArea * 1.8 && area > 0.035;
+    const smallArea = area < 0.012;
+    const deep = depth > 0.6, shallow = depth < 0.35;
+    let rec;
+    if (lowRel && bigArea) rec = { tag: "Reposicionar", tone: "error", text: "Ocupa espaço nobre mas converte pouco — teste reposicionar, reduzir o destaque ou rever a comunicação." };
+    else if (lowRel && smallArea) rec = { tag: "Aumentar alvo", tone: "alert", text: "Uso baixo com alvo pequeno — aumente a área de toque/rótulo antes de concluir que é irrelevante." };
+    else if (lowRel) rec = { tag: "Revisar", tone: "alert", text: "Uso baixo — candidato a repensar, remover ou testar outra abordagem." };
+    else if (highRel && deep) rec = { tag: "Promover", tone: "success", text: "Forte mesmo estando mais abaixo — teste subir na hierarquia / acima da dobra." };
+    else if (shallow && p.residual != null && p.residual < -0.1) rec = { tag: "Rever clareza", tone: "alert", text: "No topo, mas rende menos que o esperado — problema de clareza/comunicação, não de posição." };
+    else if (highRel) rec = { tag: "Manter", tone: "success", text: "Funcionando bem — mantenha e proteja essa hierarquia." };
+    else rec = { tag: "Monitorar", tone: "neutral", text: "Dentro do esperado para a posição — monitore." };
+    return { region: r, event: r.event, rel, area, depth, rec };
+  });
+  rows.sort((a, b) => (REC_WEIGHT[a.rec.tone] - REC_WEIGHT[b.rec.tone]) || (b.rel - a.rel));
+  return rows;
+}
+
+/* Neighbouring components that are both relevant → competing for the click. */
+function attentionCompetition() {
+  const c = counts(), regs = analysisRegions();
+  if (regs.length < 2 || !state.totalUsers) return [];
+  const rk = ranking(regs, state.totalUsers, c);
+  const relById = new Map(rk.map((r) => [r.region.id, r.relevance]));
+  const medRel = median(rk.map((r) => r.relevance));
+  const strong = regs.filter((r) => (relById.get(r.id) || 0) >= Math.max(medRel, 0.04));
+  const center = (r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 });
+  const pairs = [];
+  for (let i = 0; i < strong.length; i++) {
+    for (let j = i + 1; j < strong.length; j++) {
+      const a = strong[i], b = strong[j], ca = center(a), cb = center(b);
+      const dist = Math.hypot(ca.x - cb.x, ca.y - cb.y);
+      if (dist < 0.24) pairs.push({ a, b, dist, relA: relById.get(a.id) || 0, relB: relById.get(b.id) || 0 });
+    }
+  }
+  pairs.sort((p, q) => (q.relA + q.relB) - (p.relA + p.relB));
+  return pairs.slice(0, 6);
+}
+
+function renderRecommendations() {
+  const box = $("#rec-list"), empty = $("#rec-empty");
+  if (!box) return;
+  const rows = canAnalyze() ? componentInsights() : [];
+  if (!rows.length) { box.innerHTML = ""; box.hidden = true; empty.hidden = false; return; }
+  box.hidden = false; empty.hidden = true;
+  box.innerHTML = rows.map((r) => {
+    const idx = regionIndex(r.region.id);
+    return `<button class="rec" data-id="${r.region.id}" style="--rc:${regionColor(idx)}">
+      <span class="rec__idx">${idx + 1}</span>
+      <span class="rec__body"><span class="rec__name">${r.event}</span><span class="rec__text">${r.rec.text}</span></span>
+      <span class="rec__tag tone-${r.rec.tone}">${r.rec.tag}</span>
+    </button>`;
+  }).join("");
+  box.querySelectorAll(".rec").forEach((n) => {
+    n.addEventListener("pointerenter", () => setHover(n.dataset.id));
+    n.addEventListener("pointerleave", () => setHover(null));
+    n.addEventListener("click", () => selectRegion(n.dataset.id, false));
+  });
+}
+
+function renderCompetition() {
+  const box = $("#comp-list"), empty = $("#comp-empty");
+  if (!box) return;
+  const pairs = canAnalyze() ? attentionCompetition() : [];
+  if (!canAnalyze()) { box.innerHTML = ""; box.hidden = true; empty.hidden = false; empty.textContent = "Mapeie componentes e informe o total de usuários."; return; }
+  if (!pairs.length) { box.innerHTML = ""; box.hidden = true; empty.hidden = false; empty.textContent = "Nenhuma competição evidente — os componentes relevantes estão bem separados."; return; }
+  box.hidden = false; empty.hidden = true;
+  box.innerHTML = pairs.map((p) => {
+    const ia = regionIndex(p.a.id), ib = regionIndex(p.b.id);
+    return `<div class="comp" data-a="${p.a.id}" data-b="${p.b.id}">
+      <span class="comp__pair"><b style="color:${regionColor(ia)}">${p.a.event}</b> <span class="comp__vs">⇄</span> <b style="color:${regionColor(ib)}">${p.b.event}</b></span>
+      <span class="comp__note">próximos e ambos relevantes (${fmtPct(p.relA)} / ${fmtPct(p.relB)}) — hierarquize um deles.</span>
+    </div>`;
+  }).join("");
+  box.querySelectorAll(".comp").forEach((n) => {
+    n.addEventListener("pointerenter", () => setHover(n.dataset.a));
+    n.addEventListener("pointerleave", () => setHover(null));
+    n.addEventListener("click", () => selectRegion(n.dataset.a, false));
+  });
 }
 
 /* ============================================================
@@ -2096,9 +2197,36 @@ function openFunnelLightbox(id) {
   prev.disabled = idx === 0; next.disabled = idx === steps.length - 1;
   prev.onclick = () => idx > 0 && openFunnelLightbox(steps[idx - 1].id);
   next.onclick = () => idx < steps.length - 1 && openFunnelLightbox(steps[idx + 1].id);
+  $("#funnel-lb-analyze").onclick = () => analyzeFunnelStep(id);
   $("#funnel-lightbox").hidden = false;
 }
 function closeFunnelLightbox() { $("#funnel-lightbox").hidden = true; state.funnel.selectedId = null; }
+
+/* Drill-down: open a funnel step in Análise to map/detect its components.
+   Reuses an existing analysis screen with the same image, else creates one,
+   and sets the total-users denominator to that step's volumetria. */
+function analyzeFunnelStep(id) {
+  const s = funnelSteps().find((x) => x.id === id);
+  if (!s) return;
+  let idx = state.screens.findIndex((sc) => sc.imageURL === s.imageURL);
+  if (idx < 0) {
+    state.screens.push({
+      id: "fa" + Date.now().toString(36), name: s.name, file: s.file || (s.name + ".png"),
+      imageURL: s.imageURL, baseUsers: s.volume || state.suggestedTotal || state.totalUsers,
+      regions: [], sameAsPrev: null, fromFunnel: true,
+    });
+    idx = state.screens.length - 1;
+  }
+  state.screenIndex = idx;
+  state.selectedId = state.hoverId = state.armedEvent = null;
+  state.candidates = []; state.zoom = 1;
+  if (s.volume > 0) setTotalUsers(s.volume); // denominador = volumetria da etapa
+  closeFunnelLightbox();
+  setMode("analysis");
+  renderAll();
+  const note = s.volume > 0 ? ` · total de usuários = ${fmtInt(s.volume)} (volumetria da etapa)` : "";
+  toast(`“${s.name}” aberta na Análise — detecte ou mapeie os componentes${note}.`, "success", 5200);
+}
 
 function addFunnelSteps(files) {
   const imgs = [...files].filter((f) => f.type.startsWith("image/"));
